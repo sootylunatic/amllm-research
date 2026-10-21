@@ -7,7 +7,7 @@ name = "adaptive-modular-llm"
 version = "0.2.1"
 description = "Research prototype: hierarchical sparse module routing and adaptive compute depth"
 requires-python = ">=3.10"
-dependencies = ["torch>=2.3", "numpy>=1.24"]
+dependencies = ["torch>=2.3", "numpy>=1.24", "tokenizers>=0.20"]
 license = {text = "MIT"}
 readme = "README.md"
 
