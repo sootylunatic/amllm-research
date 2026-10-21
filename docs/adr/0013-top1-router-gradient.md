@@ -24,3 +24,8 @@ loss, not the capability of top-1 routing.
 ## Consequences
 - The defect is pinned by tests on both levels; the fix is tested to deliver gradient.
 - `full_softmax` changes the output scale (weights no longer sum to 1); compare `full_softmax` runs only with each other.
+
+**Result (2026-10-21, E09 addendum A, 3 seeds):** with `full_softmax` both top-1 routers learn. Module top-1
+1.5534 ± 0.0151 and expert top-1 1.5662 ± 0.0110 vs. top-2 `full_softmax` 1.5597 ± 0.0103 — within the pre-registered
+±2% on every seed — at ~28% fewer ideal FLOPs. `full_softmax` itself costs 2.3% against the default top-2 weighting, so
+a weighting that trains top-1 without this cost remains open (NEXT_EXPERIMENTS N2).

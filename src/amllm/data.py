@@ -108,10 +108,18 @@ def build(srcs: list[Path], out: Path, max_bytes: int, val_frac: float, test_fra
     return manifest
 
 
+def is_token_corpus(data_dir: str | Path) -> bool:
+    """True for a BPE corpus written by corpus_v2 (uint16 token ids), False for the byte corpus."""
+    manifest = Path(data_dir) / "manifest.json"
+    return manifest.is_file() and json.loads(manifest.read_text()).get("format") == "tokens-uint16"
+
+
 def load_split(data_dir: str | Path, split: str) -> torch.Tensor:
     path = Path(data_dir)
     if path.is_file():  # legacy single text file: use it for every split (smoke tests only)
         return torch.from_numpy(np.frombuffer(path.read_bytes(), dtype=np.uint8).copy())
+    if is_token_corpus(path):
+        return torch.from_numpy(np.fromfile(path / f"{split}.bin", dtype=np.uint16).astype(np.int32))
     return torch.from_numpy(np.fromfile(path / f"{split}.bin", dtype=np.uint8))
 
 
@@ -149,9 +157,11 @@ def byte_classes(data: torch.Tensor) -> torch.Tensor:
     return lut[data.long()]
 
 
-def load_categories(data_dir: str | Path, split: str, data: torch.Tensor) -> tuple[torch.Tensor, dict[int, str]]:
-    """Per-byte evaluation categories: task labels if the split ships a .cat.bin, else byte classes."""
+def load_categories(data_dir: str | Path, split: str, data: torch.Tensor) -> tuple[torch.Tensor | None, dict[int, str]]:
+    """Per-byte evaluation categories: task labels if the split ships a .cat.bin, else byte classes (none for tokens)."""
     path = Path(data_dir)
+    if is_token_corpus(path):
+        return None, {}
     cat_file = path / f"{split}.cat.bin"
     if path.is_dir() and cat_file.exists():
         names = json.loads((path / "manifest.json").read_text())["categories"]

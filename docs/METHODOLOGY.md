@@ -53,7 +53,7 @@ Related decisions: [ADR-0007](adr/0007-corpus-and-split.md) (data), [ADR-0008](a
 |---|---|
 | val/test loss | mean cross-entropy in nat/byte; `bpb = loss / ln 2`; perplexity = `exp(loss)` (per byte) |
 | mean hops | executed module-bank calls per token (Dense/MoE: number of layers) |
-| estimated FLOP/token | analytic forward estimate, "implemented" and "ideal" ([ARCHITECTURE.md §4](ARCHITECTURE.md#4-flop-estimate-forward-per-token-multiply-add--2-flops)) |
+| estimated FLOP/token | analytic forward estimate: "routed" (selected assignments; "implemented" in phase 1), "executed" (incl. `bmm` padding) and "ideal" ([ARCHITECTURE.md §4](ARCHITECTURE.md#4-flop-estimate-forward-per-token-multiply-add--2-flops)) |
 | profiled FLOP/token | `torch.profiler` matmul FLOPs of one forward (batch 32), per dispatch path |
 | latency | full-sequence forward, CUDA-synchronised, 10 warm-up + 50 repeats, median and p95, batch 1 and 32, **with diagnostics on and off**, all 3 seeds; **not generated tokens/s** |
 | host syncs | synchronisations per forward from CUDA sync-debug mode (a lower bound) |
@@ -74,6 +74,8 @@ batch size, diagnostics setting); values from different paths are not mixed in o
   conclusions on 3 seeds.
 - Component attributions require a control that changes only that component (same parameters and compute);
   otherwise the result is reported as confounded.
+- A finished run is reused (`--skip-existing`) only if its model and training configuration, data split id and
+  training-code hash (`train_code_sha256`) are identical to the requested run.
 - Runs whose configuration makes a router untrainable (top-1 with `topk_softmax`, ADR-0013) are flagged as invalid for
   that question.
 

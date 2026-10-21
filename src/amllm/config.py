@@ -33,7 +33,8 @@ class ModelConfig:
     halt_threshold: float = 0.5
     halt_bias_init: float = -1.0
     # route weights: topk_softmax (v0.1/v0.2 default; k=1 gives the router no LM gradient) or
-    # full_softmax (Switch-style, gradient for every k); router_mode=random is a no-learned-routing control
+    # full_softmax (Switch-style, gradient for every k) or straight_through (forward of topk_softmax, gradient for
+    # every k); router_mode=random is a no-learned-routing control
     route_weighting: str = "topk_softmax"
     router_mode: str = "learned"
     ponder_coefficient: float = 0.002
@@ -42,7 +43,7 @@ class ModelConfig:
     def __post_init__(self):
         assert self.arch in ARCHS, self.arch
         assert self.halt_rule in HALT_RULES, self.halt_rule
-        assert self.route_weighting in ("topk_softmax", "full_softmax"), self.route_weighting
+        assert self.route_weighting in ("topk_softmax", "full_softmax", "straight_through"), self.route_weighting
         assert self.router_mode in ("learned", "random"), self.router_mode
         assert self.d_model % self.n_heads == 0
         assert 1 <= self.module_topk <= self.n_modules

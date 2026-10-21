@@ -23,3 +23,8 @@ nem a Top-1 routing képességét.
 ## Következmények
 - A hibát mindkét szinten teszt rögzíti; a javítás gradiensét teszt ellenőrzi.
 - A `full_softmax` megváltoztatja a kimenet skáláját (a súlyok összege nem 1), ezért `full_softmax` futásokat csak egymással hasonlítunk.
+
+**Eredmény (2026-10-21, E09 A kiegészítés, 3 seed):** `full_softmax` mellett mindkét Top-1 router tanul. Modul Top-1
+1,5534 ± 0,0151, expert Top-1 1,5662 ± 0,0110 vs. Top-2 `full_softmax` 1,5597 ± 0,0103 — minden seeden az előre
+rögzített ±2%-on belül —, ~28%-kal kevesebb ideális FLOP mellett. Maga a `full_softmax` 2,3%-ba kerül az alapértelmezett
+Top-2 súlyozáshoz képest, így nyitott marad egy olyan súlyozás, amely ezt a költséget nem okozza (NEXT_EXPERIMENTS N2).

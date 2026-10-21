@@ -25,7 +25,7 @@ from torch.profiler import ProfilerActivity, profile
 from . import env
 from .config import ModelConfig
 from .data import eval_batches, load_split
-from .model import build_model, count_parameters, set_diagnostics, set_dispatch
+from .model import build_model, count_parameters, expert_banks, ffn_flops, set_diagnostics, set_dispatch
 
 
 def load_run(run_dir: Path, device):
@@ -83,6 +83,27 @@ def count_syncs(model, x, **mode) -> int:
     finally:
         torch.cuda.set_sync_debug_mode(0)
     return sum("synchroniz" in str(w.message).lower() for w in caught)
+
+
+@torch.no_grad()
+def executed_flops(model, cfg: ModelConfig, x, **mode) -> dict:
+    """Routed vs. executed FLOPs: `flops_per_token` counts only the routed expert assignments; with the `bmm`
+    dispatch the padding rows are computed too. Executed = routed + (computed rows - routed rows) x FFN cost."""
+    banks = expert_banks(model)
+    for bank in banks:
+        bank.rows_computed = 0
+    diag = getattr(model, "diagnostics", True)
+    set_diagnostics(model, True)  # the FLOP report needs the routing statistics
+    _, info = model(x, **mode)
+    set_diagnostics(model, diag)
+    routed_flops = float(info["flops_per_token"])
+    if not banks:
+        return {"routed_flops_per_token": routed_flops, "executed_flops_per_token": routed_flops, "padding_ratio": 1.0}
+    rows = sum(bank.rows_computed for bank in banks)
+    routed_rows = int(info["expert_counts"].sum())
+    extra = (rows - routed_rows) * ffn_flops(cfg.d_model, cfg.expert_hidden) / x.numel()
+    return {"routed_flops_per_token": routed_flops, "executed_flops_per_token": routed_flops + extra,
+            "padding_ratio": rows / max(1, routed_rows)}
 
 
 def param_sizes(cfg: ModelConfig) -> dict:
@@ -152,6 +173,10 @@ def main():
     p.add_argument("--data", default="data/ts_corpus")
     p.add_argument("--warmup", type=int, default=10)
     p.add_argument("--repeats", type=int, default=50)
+    p.add_argument("--seq-lens", default="", help="comma-separated context lengths (default: the model's max_seq_len)")
+    p.add_argument("--diag", choices=["both", "off"], default="both", help="measure with diagnostics on and off, or off only")
+    p.add_argument("--default-mode-only", action="store_true",
+                   help="only the default inference mode (hard halting for adaptive AM-LLM, full depth otherwise)")
     a = p.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     val = load_split(a.data, "val")
@@ -162,16 +187,20 @@ def main():
         weights_mb = sum(p.numel() * p.element_size() for p in model.parameters()) / 2**20
         modes = {"default": {}} if cfg.arch != "amllm" else (
             {"hard": {"hard_halt": True}, "soft": {"hard_halt": False}} if cfg.halt_rule != "none" else {"fixed": {"hard_halt": True}})
+        if a.default_mode_only:
+            modes = dict(list(modes.items())[:1])
         r = {"arch": cfg.arch, "config": cfg.to_dict(), "parameters": count_parameters(model),
              "weights_mb_fp32": round(weights_mb, 2), **active_params(cfg, model, val, device), "measurements": {}}
         for dispatch in (("loop", "bmm") if cfg.arch != "dense" else ("dense",)):
             if cfg.arch != "dense":
                 set_dispatch(model, dispatch)
-            for (mode_name, mode), diag in ((m, dg) for m in modes.items() for dg in (True, False)):
+            seq_lens = [int(t) for t in a.seq_lens.split(",") if t] or [cfg.max_seq_len]
+            diags = (True, False) if a.diag == "both" else (False,)
+            for (mode_name, mode), diag, seq_len in ((m, dg, t) for m in modes.items() for dg in diags for t in seq_lens):
                 set_diagnostics(model, diag)
                 for batch in (1, 32):
                     # real validation text, not random bytes: halting depth depends on content
-                    x = next(eval_batches(val, batch, batch, cfg.max_seq_len, device))[0]
+                    x = next(eval_batches(val, batch, batch, min(seq_len, cfg.max_seq_len), device))[0]
                     if device.type == "cuda":
                         torch.cuda.empty_cache()
                         torch.cuda.reset_peak_memory_stats()
@@ -179,12 +208,14 @@ def main():
                     with torch.autocast(device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
                         lat = latency(model, x, device, a.warmup, a.repeats, **mode)
                         prof = profiled(model, x, **mode) if batch == 32 else {}
+                        if batch == 32:
+                            prof.update(executed_flops(model, cfg, x, **mode))
                         syncs = count_syncs(model, x, **mode) if device.type == "cuda" else None
                     peak = (torch.cuda.max_memory_allocated() - base) / 2**20 if device.type == "cuda" else None
-                    key = f"{dispatch}/{mode_name}/b{batch}/diag_{'on' if diag else 'off'}"
+                    key = f"{dispatch}/{mode_name}/b{batch}/t{x.shape[1]}/diag_{'on' if diag else 'off'}"
                     r["measurements"][key] = {**lat, **prof, "host_syncs_per_forward": syncs, "peak_activation_vram_mb": round(peak, 1) if peak is not None else None,
                                               "peak_total_vram_mb": round(peak + weights_mb, 1) if peak is not None else None}
-                    print(f"{run_dir.name:22s} {key:31s} median={lat['median_ms']:.2f}ms p95={lat['p95_ms']:.2f}ms "
+                    print(f"{run_dir.name:22s} {key:36s} median={lat['median_ms']:.2f}ms p95={lat['p95_ms']:.2f}ms "
                           + (f"kernels={prof['cuda_kernels_per_forward']} prof_MFLOP/tok={prof['profiled_matmul_flops_per_token'] / 1e6:.3f}" if prof else ""), flush=True)
         set_diagnostics(model, True)
         results["runs"][f"{run_dir.parent.name}/{run_dir.name}"] = r

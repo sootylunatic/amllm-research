@@ -138,7 +138,10 @@ a dispatch expert-darabszámai és hard módban az aktív tokenek indexe. A kés
 | halting-fej | `2·d` hoponként (az utolsó kivételével) |
 | LM-fej | `2·d·256` |
 
-- **Implementált:** attention minden lefutott hopban minden tokenre (ahogy a kód futtatja).
+- **Routolt** (`flops_per_token`, az 1. fázisban „implementált”): attention minden lefutott hopban minden tokenre, és csak
+  a *kiválasztott* expert-hozzárendelések.
+- **Végrehajtott** (`amllm.profile`): a routolt plusz a `bmm` dispatch által szintén kiszámolt padding-sorok; `loop`
+  esetén azonos a routolttal.
 - **Ideális:** attention csak az aktív query-tokenekre — még nincs implementálva.
 - **Profilozott** (`amllm.profile`): `torch.profiler` matmul-FLOP; az SDPA nincs benne, ezért a különbség a becsléshez
   pontosan `attention-hívások · 2d(t+1)` (ellenőrizve). `bmm` dispatch mellett a profilozott FLOP a paddinget is tartalmazza.

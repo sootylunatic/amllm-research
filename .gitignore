@@ -16,3 +16,6 @@ results/*
 !results/README.md
 !results/README.hu.md
 !results/summary.csv
+
+# marker written by tools/export_public.py
+.amllm-public-export

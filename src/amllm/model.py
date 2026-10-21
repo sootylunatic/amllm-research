@@ -259,7 +259,7 @@ def expert_banks(model: nn.Module):
 
 
 def set_dispatch(model: nn.Module, mode: str) -> None:
-    assert mode in ("loop", "bmm")
+    assert mode in ("loop", "bmm", "grouped", "triton")
     for bank in expert_banks(model):
         bank.dispatch = mode
 

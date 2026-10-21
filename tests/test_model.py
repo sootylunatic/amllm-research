@@ -308,3 +308,21 @@ def test_grouped_combine_matches_index_add(dispatch):
     a, ca = bank(x, tok, eid, w)
     b, cb = bank(x, tok, eid, w, routes_per_token=k)
     assert torch.allclose(a, b, atol=1e-6) and torch.equal(ca, cb)
+
+
+def test_straight_through_forward_equals_default_weighting():
+    """F1b: straight-through weighting has exactly the forward value of topk_softmax (only gradients differ)."""
+    x = torch.randint(0, 256, (2, 12))
+    outs = []
+    for weighting in ("topk_softmax", "straight_through"):
+        torch.manual_seed(18)
+        model = AdaptiveModularLM(tiny_cfg(route_weighting=weighting, module_topk=1)).eval()
+        with torch.no_grad():
+            outs.append(model(x, hard_halt=False)[0])
+    assert torch.equal(outs[0], outs[1])
+
+
+@pytest.mark.parametrize("module_k,expert_k", [(1, 2), (2, 1), (1, 1), (2, 2)])
+def test_straight_through_gives_top1_routers_gradient(module_k, expert_k):
+    g_module, g_expert = _router_grads(module_topk=module_k, expert_topk=expert_k, route_weighting="straight_through")
+    assert g_module > 0 and g_expert > 0

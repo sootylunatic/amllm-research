@@ -112,9 +112,10 @@ def main():
             # otherwise its untrained halting head would cut the trace short
             control_mode = {"hard_halt": True, "halt_rule": "none"} if cfg.arch == "amllm" else {}
             t, u = analyse(cfg, trained, xs), analyse(cfg, untrained, xs, **control_mode)
-        result["runs"][Path(run).name] = {"arch": cfg.arch, "trained": t, "untrained_control": u}
+        key = f"{Path(run).parent.name}/{Path(run).name}"  # experiment/run: run names repeat across experiments
+        result["runs"][key] = {"arch": cfg.arch, "trained": t, "untrained_control": u}
         for st, su in zip(t["steps"], u["steps"]):
-            print(f"{Path(run).name:22s} step{st['step']} MI_norm trained={st['mi_norm_by_H_class']:.3f} "
+            print(f"{key:40s} step{st['step']} MI_norm trained={st['mi_norm_by_H_class']:.3f} "
                   f"untrained={su['mi_norm_by_H_class']:.3f} usageH={st['usage_entropy_norm']:.3f} "
                   f"max_share={st['max_share']:.3f} dead={st['dead_units']}")
     Path(a.out).write_text(json.dumps(result, indent=2))

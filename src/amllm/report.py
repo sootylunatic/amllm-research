@@ -224,15 +224,24 @@ def comparison(profile: dict, router: dict) -> dict:
                 prof = profile_summary(profile, exp, preset)
                 if prof:
                     entry["profile"] = prof
-                ra = router.get("runs", {}).get(f"{preset}_s42") if group == "e07" else None
-                if ra:
-                    t, u = ra["trained"]["steps"], ra["untrained_control"]["steps"]
-                    entry["router_seed42"] = {
-                        "mi_norm_trained_per_step": [s["mi_norm_by_H_class"] for s in t],
-                        "mi_norm_untrained_per_step": [s["mi_norm_by_H_class"] for s in u],
-                        "usage_entropy_norm_per_step": [s["usage_entropy_norm"] for s in t],
-                        "max_share_per_step": [s["max_share"] for s in t],
-                        "dead_units_per_step": [s["dead_units"] for s in t]}
+                analysed = [router["runs"][k] for k in sorted(router.get("runs", {}))
+                            if k.startswith(f"{exp}/{preset}_s")]
+                if analysed:
+                    def per_run(ra):
+                        t, u = ra["trained"]["steps"], ra["untrained_control"]["steps"]
+                        return {"mi_norm_trained_per_step": [s["mi_norm_by_H_class"] for s in t],
+                                "mi_norm_untrained_per_step": [s["mi_norm_by_H_class"] for s in u],
+                                "usage_entropy_norm_per_step": [s["usage_entropy_norm"] for s in t],
+                                "max_share_per_step": [s["max_share"] for s in t],
+                                "dead_units_per_step": [s["dead_units"] for s in t]}
+                    runs_ = [per_run(ra) for ra in analysed]
+                    entry["router"] = {
+                        "seeds_analysed": len(runs_),
+                        "mi_norm_trained_mean": mstd([statistics.fmean(r["mi_norm_trained_per_step"]) for r in runs_]),
+                        "mi_norm_untrained_mean": mstd([statistics.fmean(r["mi_norm_untrained_per_step"]) for r in runs_]),
+                        "max_share_max": max(max(r["max_share_per_step"]) for r in runs_),
+                        "dead_units_max": max(max(r["dead_units_per_step"]) for r in runs_),
+                        "per_seed": runs_}
                 out["models"][f"{group}/{preset}"] = entry
     (RESULTS / "architecture_comparison.json").write_text(json.dumps(out, indent=2))
     return out
@@ -364,7 +373,12 @@ def fig_hops_per_class(e03: dict, main: dict, lang: str):
 
 def fig_router_mi(router: dict, lang: str):
     T = TEXT[lang]
-    runs = {k: v for k, v in router.get("runs", {}).items() if k.endswith("_s42")}
+    panels = [("e07_seeds/moe_s42", "MoE"), ("e07_seeds/amllm_s42", "AM-LLM"),
+              ("e07b_lowcompute/amllm_ua_s42", "AM-LLM per-hop attn" if lang == "en" else "AM-LLM hoponkénti attn."),
+              ("e09_audit_controls/amllm_fixed_rand_s42", "random routes (trained)" if lang == "en" else "véletlen útvonal (tanítva)"),
+              ("e06_ablations/amllm_mk1_s42", "module top-1, topk_softmax" if lang == "en" else "modul Top-1, topk_softmax"),
+              ("e09_audit_controls/amllm_mk1_fs_s42", "module top-1, full_softmax" if lang == "en" else "modul Top-1, full_softmax")]
+    runs = {title: router["runs"][key] for key, title in panels if key in router.get("runs", {})}
     if not runs:
         return
     n = len(runs)
@@ -379,7 +393,7 @@ def fig_router_mi(router: dict, lang: str):
         ax.bar([x - 0.19 for x in xs[:len(u)]], u, width=0.36, color=SURFACE, edgecolor=INK2, linewidth=1.1,
                label=T["untrained"])
         ax.bar([x + 0.19 for x in xs], t, width=0.36, color=COLOR["amllm"], label=T["trained"])
-        style(ax, name.replace("_s42", ""), T["layer"] if r["arch"] == "moe" else T["hop"], "")
+        style(ax, name, T["layer"] if r["arch"] == "moe" else T["hop"], "")
         ax.title.set_fontsize(9)
         ax.set_xticks(xs)
     for ax in list(axes.flat)[n:]:
@@ -401,8 +415,9 @@ def fig_latency(cmp: dict, lang: str):
         if group != "e07" or "profile" not in m:
             continue
         for path, row in m["profile"]["paths"].items():
-            dispatch, mode, batch, diag = path.split("/")
-            if batch != "b32" or mode == "soft" or diag != "diag_off":
+            parts = path.split("/")  # dispatch/mode/batch[/t<len>]/diag
+            dispatch, mode, batch, diag = parts[0], parts[1], parts[2], parts[-1]
+            if batch != "b32" or mode == "soft" or diag != "diag_off" or (len(parts) == 5 and parts[3] != "t256"):
                 continue
             names.append(f"{L.get(preset, preset).split(' (')[0]} · {dispatch}")
             med.append(row["median_ms"])

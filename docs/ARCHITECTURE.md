@@ -136,7 +136,9 @@ the active-token index. Latency is reported for both settings.
 | halting head | `2·d` per hop (except the last) |
 | LM head | `2·d·256` |
 
-- **Implemented:** attention in every executed hop for every token (as the code runs it).
+- **Routed** (`flops_per_token`, called "implemented" in phase 1): attention in every executed hop for every token,
+  plus the *selected* expert assignments only.
+- **Executed** (`amllm.profile`): routed plus the padding rows the `bmm` dispatch also computes; equals routed for `loop`.
 - **Ideal:** attention only for active query tokens — not implemented yet.
 - **Profiled** (`amllm.profile`): `torch.profiler` matmul FLOPs; SDPA is not counted, so the difference to the estimate
   is exactly `attention calls · 2d(t+1)` (verified). With `bmm` dispatch the profiled FLOPs include the padding.

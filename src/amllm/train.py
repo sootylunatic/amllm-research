@@ -139,7 +139,8 @@ def run(cfg: ModelConfig, tc: TrainConfig) -> dict:
         return tc.lr * (tc.min_lr_frac + (1 - tc.min_lr_frac) * 0.5 * (1 + math.cos(math.pi * progress)))
 
     (run_dir / "config.json").write_text(json.dumps({"model": cfg.to_dict(), "train": asdict(tc),
-                                                     "data_split_id": split_id(tc.data)}, indent=2))
+                                                     "data_split_id": split_id(tc.data),
+                                                     "train_code_sha256": env.train_code_hash()}, indent=2))
     (run_dir / "env.json").write_text(json.dumps(env.collect(), indent=2))
     log = (run_dir / "train.log").open("w", encoding="utf-8")
 

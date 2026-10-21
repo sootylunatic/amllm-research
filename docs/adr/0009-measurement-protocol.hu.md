@@ -23,3 +23,10 @@ utólagos igazítása könnyen „sikert” gyárt.
 ## Következmények
 - A célértékeket (≤5% minőségromlás, ≥15% számításcsökkenés, ≤10% latency-regresszió) nem igazítottuk az eredményhez;
   a jelentés kritériumonként rögzíti, mi teljesült.
+
+**Javítás (2026-10-21, újraaudit):** a `--skip-existing` csak a tárolt konfigurációt vetette össze, így azonos útvonalon
+megváltozott korpusz vagy módosult tanítókód mellett is újrahasznosíthatott volna egy régi riportot (a meglévő
+futásokban ilyen esetet nem találtunk). Mostantól a tárolt adatsplit-azonosítót és a tanítókód hash-ét is
+összeveti (`config.py`, `data.py`, `model.py`, `routing.py`, `train.py`; `train_code_sha256` néven a `config.json`-ban és
+az `env.json`-ban). A változtatás előtt rögzített futás csak kifejezett `--allow-legacy-reuse` kapcsolóval használható
+újra. Tesztek: `tests/test_experiment_reuse.py`.

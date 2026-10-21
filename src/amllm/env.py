@@ -47,6 +47,18 @@ def source_hash() -> str:
     return h.hexdigest()[:16]
 
 
+# modules that determine training and evaluation results (not reporting/profiling tools)
+TRAIN_CODE = ("config.py", "data.py", "model.py", "routing.py", "train.py")
+
+
+def train_code_hash() -> str:
+    """SHA-256 over the modules that determine training/evaluation results."""
+    h = hashlib.sha256()
+    for name in TRAIN_CODE:
+        h.update(name.encode() + (Path(__file__).parent / name).read_bytes())
+    return h.hexdigest()[:16]
+
+
 def sanitize(text: str) -> str:
     """Strip machine-specific absolute paths (working directory, home) before results are published."""
     text = text.replace(str(Path.cwd()) + "/", "")
@@ -67,7 +79,7 @@ def collect() -> dict:
         "torch": torch.__version__, "cuda": torch.version.cuda,
         "driver": (_cmd(["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"]) or "").split("\n")[0] or None,
         "gpus": gpus, "visible_device": torch.cuda.get_device_name(0) if gpus else "cpu",
-        "git_commit": _cmd(["git", "rev-parse", "HEAD"]), "source_sha256": source_hash(),
+        "git_commit": _cmd(["git", "rev-parse", "HEAD"]), "source_sha256": source_hash(), "train_code_sha256": train_code_hash(),
         "command": sanitize(" ".join(sys.argv)),
     }
 

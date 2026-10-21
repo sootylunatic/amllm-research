@@ -24,3 +24,9 @@ hyper-parameters after seeing results easily manufactures "success".
 ## Consequences
 - The first-round targets (≤ 5% quality gap, ≥ 15% compute saving, ≤ 10% latency regression) were not adjusted to
   the results; the report states per criterion what was met.
+
+**Correction (2026-10-21, re-audit):** `--skip-existing` compared only the stored configuration, so a changed corpus at
+the same path or changed training code could have reused an old report (no such case was found in the existing runs).
+It now also compares the stored data split id and the training-code hash (`config.py`, `data.py`, `model.py`,
+`routing.py`, `train.py`, recorded as `train_code_sha256` in `config.json` and `env.json`); runs recorded before this
+change can be reused only with an explicit `--allow-legacy-reuse`. Tests: `tests/test_experiment_reuse.py`.

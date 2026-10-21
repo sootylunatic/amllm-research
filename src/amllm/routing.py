@@ -27,6 +27,11 @@ class ExpertBank(nn.Module):
     dispatch="bmm":  pad every expert's tokens to the largest group and run one batched
                      matmul (a grouped-GEMM stand-in). Few kernels, but the padding rows and
                      experts with zero tokens are computed too, so FLOPs are NOT skipped.
+    dispatch="grouped": torch._grouped_mm with device-side offsets; only routed rows, no padding. On
+                     sm_89 PyTorch copies the offsets to the host and launches one kernel per group,
+                     so it is NOT sync-free there (measured, phase 2 F3).
+    dispatch="triton": own Triton grouped GEMM (triton_grouped.py): routed rows only, no host sync,
+                     CUDA-Graph capturable; inference only.
     """
 
     def __init__(self, n: int, width: int, hidden: int):
@@ -53,6 +58,14 @@ class ExpertBank(nn.Module):
         xs = x.index_select(0, tok)
         if self.dispatch == "bmm":
             y = self._expert_outputs_bmm(xs, expert_idx[order], counts)
+        elif self.dispatch == "grouped":
+            y = self._expert_outputs_grouped(xs, expert_idx[order], counts)
+        elif self.dispatch == "triton":
+            from .triton_grouped import grouped_ffn  # CUDA + Triton only; inference only (no autograd)
+            dtype = torch.get_autocast_dtype("cuda") if torch.is_autocast_enabled("cuda") else xs.dtype
+            y = grouped_ffn(xs.to(dtype), self.w1, self.b1, self.w2, self.b2, counts)
+            self.last_executed = []
+            self.rows_computed += xs.shape[0]
         else:
             y = self._expert_outputs_loop(xs, counts)
         if y is None:
@@ -75,6 +88,18 @@ class ExpertBank(nn.Module):
         self.last_executed = executed
         self.rows_computed += start
         return torch.cat(outs) if outs else None
+
+    def _expert_outputs_grouped(self, xs: Tensor, eid: Tensor, counts: Tensor) -> Tensor:
+        """Grouped GEMM with device-side group offsets (CUDA): only routed rows are computed, no padding and no
+        host synchronisation, so the dispatch can be captured in a CUDA Graph (phase 2, F3)."""
+        offs = torch.cumsum(counts, 0).to(torch.int32)
+        dtype = torch.get_autocast_dtype("cuda") if torch.is_autocast_enabled("cuda") else xs.dtype
+        xs = xs.to(dtype)
+        h = torch._grouped_mm(xs, self.w1.to(dtype), offs=offs) + self.b1.to(dtype)[eid]
+        y = torch._grouped_mm(F.silu(h), self.w2.to(dtype), offs=offs) + self.b2.to(dtype)[eid]
+        self.last_executed = []  # not materialised: listing the experts would need a host sync
+        self.rows_computed += xs.shape[0]
+        return y
 
     def _expert_outputs_bmm(self, xs: Tensor, eid: Tensor, counts: Tensor) -> Tensor:
         cap = int(counts.max())  # the only host sync of the dispatch
@@ -99,6 +124,8 @@ class HierarchicalModuleBank(nn.Module):
         With k=1 the weight is identically 1, so that router gets no language-model gradient.
     weighting="full_softmax": route weights = softmax over *all* scores, gathered at the selected
         routes (Switch-Transformer style); the router gets gradient for every k.
+    weighting="straight_through": forward value of topk_softmax, gradient additionally through the full softmax
+        probability of the selected routes (straight-through), so k=1 routers learn without changing the forward.
     router_mode="random": route choices are uniform random and weights uniform (1/k): a training-time
         "no learned routing" control with identical parameters and compute.
     """
@@ -107,7 +134,7 @@ class HierarchicalModuleBank(nn.Module):
                  experts_per_module: int, expert_k: int, hidden: int,
                  weighting: str = "topk_softmax", router_mode: str = "learned"):
         super().__init__()
-        assert weighting in ("topk_softmax", "full_softmax") and router_mode in ("learned", "random")
+        assert weighting in ("topk_softmax", "full_softmax", "straight_through") and router_mode in ("learned", "random")
         self.n_modules, self.module_k = n_modules, module_k
         self.n_experts, self.expert_k = experts_per_module, expert_k
         self.weighting, self.router_mode = weighting, router_mode
@@ -133,7 +160,13 @@ class HierarchicalModuleBank(nn.Module):
             idx = scores.topk(k, dim=-1).indices
         if self.weighting == "full_softmax":
             return idx, scores.softmax(-1).gather(-1, idx)
-        return idx, scores.gather(-1, idx).softmax(-1)
+        weights = scores.gather(-1, idx).softmax(-1)
+        if self.weighting == "straight_through":
+            # forward value = renormalised top-k weight; backward also through the full softmax probability,
+            # so a top-1 router receives LM gradient without changing the forward computation (F1b)
+            full = scores.softmax(-1).gather(-1, idx)
+            weights = weights + (full - full.detach())  # the bracket is exactly 0 in the forward pass
+        return idx, weights
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         n, M, E = x.shape[0], self.n_modules, self.n_experts

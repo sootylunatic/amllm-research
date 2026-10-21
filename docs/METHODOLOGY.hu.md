@@ -53,7 +53,7 @@ Kapcsolódó döntések: [ADR-0007](adr/0007-corpus-and-split.hu.md) (adat), [AD
 |---|---|
 | val/test loss | átlagos keresztentrópia nat/bájtban; `bpb = loss / ln 2`; perplexity = `exp(loss)` (bájtonként) |
 | átlagos hop | végrehajtott modulbank-hívások tokenenként (Dense/MoE: rétegszám) |
-| becsült FLOP/token | analitikus forward-becslés, „implementált” és „ideális” ([ARCHITECTURE.hu.md 4. pont](ARCHITECTURE.hu.md#4-flop-becslés-forward-tokenenként-szorzás-összeadás--2-flop)) |
+| becsült FLOP/token | analitikus forward-becslés: „routolt” (kiválasztott hozzárendelések; az 1. fázisban „implementált”), „végrehajtott” (a `bmm` paddingjével) és „ideális” ([ARCHITECTURE.hu.md 4. pont](ARCHITECTURE.hu.md#4-flop-becslés-forward-tokenenként-szorzás-összeadás--2-flop)) |
 | profilozott FLOP/token | `torch.profiler` matmul-FLOP egy forwardon (batch 32), dispatch-utanként |
 | késleltetés | teljes szekvenciás forward, CUDA-szinkronnal, 10 warmup + 50 ismétlés, medián és p95, batch 1 és 32, **diagnosztikával és anélkül**, mindhárom seeden; **nem generált token/s** |
 | host-szinkronok | szinkronizációk forwardonként a CUDA sync-debug módból (alsó becslés) |
@@ -74,6 +74,8 @@ számítását, késleltetését és memóriáját tartalmazza; különböző ut
   dinamikus mélység; 3 seeden hasonló következtetés.
 - Egy komponensnek tulajdonított hatáshoz olyan kontroll kell, amely csak azt a komponenst változtatja (azonos
   paraméter és számítás); különben az eredményt zavart (confounded) eredményként közöljük.
+- Egy kész futás csak akkor használható újra (`--skip-existing`), ha a modell- és tanítási konfigurációja, az
+  adatsplit-azonosítója és a tanítókód hash-e (`train_code_sha256`) azonos a kérttel.
 - Azokat a futásokat, amelyekben a konfiguráció miatt egy router nem tanítható (Top-1 `topk_softmax` mellett,
   ADR-0013), az adott kérdésre érvénytelennek jelöljük.
 

@@ -15,11 +15,14 @@ from dataclasses import asdict
 from pathlib import Path
 
 from .config import ModelConfig
+from . import env
+from .data import is_token_corpus, split_id
 from .train import TrainConfig, run
 
 BASE = dict(max_seq_len=256, d_model=128, n_heads=4)
 AMLLM = dict(BASE, arch="amllm", n_modules=8, experts_per_module=4, module_topk=2, expert_topk=2,
              expert_hidden=128, n_hops=4, halt_rule="survival", halt_threshold=0.5)
+F5_BASE = dict(max_seq_len=512, d_model=384, n_heads=6, vocab_size=8192)
 
 PRESETS: dict[str, dict] = {
     # --- controls --------------------------------------------------------------------------
@@ -64,6 +67,36 @@ PRESETS: dict[str, dict] = {
     "amllm_fs": dict(AMLLM, route_weighting="full_softmax"),
     "amllm_mk1_fs": dict(AMLLM, module_topk=1, route_weighting="full_softmax"),
     "amllm_ek1_fs": dict(AMLLM, expert_topk=1, route_weighting="full_softmax"),
+    # --- Phase 2 / F1 (docs/PHASE2_PLAN.md §3) ---------------------------------------------
+    # MoE controls matched in parameters AND FLOPs to per-hop-attention AM-LLM (top-2 / top-1)
+    "moe_e4": dict(BASE, arch="moe", n_layers=4, n_experts=4, moe_topk=2, expert_hidden=256),
+    "moe_e8h128": dict(BASE, arch="moe", n_layers=4, n_experts=8, moe_topk=2, expert_hidden=128),
+    "amllm_ua_fs": dict(AMLLM, unshared_attention=True, route_weighting="full_softmax"),
+    "amllm_ua_mk1_fs": dict(AMLLM, unshared_attention=True, module_topk=1, route_weighting="full_softmax"),
+    "amllm_ua_ek1_fs": dict(AMLLM, unshared_attention=True, expert_topk=1, route_weighting="full_softmax"),
+    "amllm_ua_both1_fs": dict(AMLLM, unshared_attention=True, module_topk=1, expert_topk=1,
+                              route_weighting="full_softmax"),
+    # F1b: straight-through weighting (forward of topk_softmax, router gradient for every k)
+    "amllm_ua_st": dict(AMLLM, unshared_attention=True, route_weighting="straight_through"),
+    "amllm_ua_mk1_st": dict(AMLLM, unshared_attention=True, module_topk=1, route_weighting="straight_through"),
+    "amllm_ua_ek1_st": dict(AMLLM, unshared_attention=True, expert_topk=1, route_weighting="straight_through"),
+    # F2-2 operating point of the F1b primary (same training code as F1b)
+    **{f"amllm_ua_mk1_st_p{tag}": dict(AMLLM, unshared_attention=True, module_topk=1,
+                                      route_weighting="straight_through", ponder_coefficient=v)
+       for tag, v in (("02", 0.02), ("03", 0.03))},
+    # F1a halting calibration on the amllm_ua_fs family (fixed-depth reference + ponder sweep)
+    "amllm_ua_fs_fixed": dict(AMLLM, unshared_attention=True, route_weighting="full_softmax", halt_rule="none"),
+    **{f"amllm_ua_fs_p{tag}": dict(AMLLM, unshared_attention=True, route_weighting="full_softmax",
+                                   ponder_coefficient=v)
+       for tag, v in (("002", 0.002), ("01", 0.01), ("03", 0.03), ("10", 0.1))},
+    # --- Phase 2 / F5: BPE corpus v2, d_model 384, context 512 (preregistration F5) ------------
+    # moe_f5 and amllm_f5 have the same expert pool (6 x 4 = 24 experts of width 384) and the same active expert
+    # width per layer/hop (2 x 384); dense_f5 is matched to their active FLOPs (FFN 768)
+    "dense_f5": dict(F5_BASE, arch="dense", n_layers=6, ffn_hidden=768),
+    "moe_f5": dict(F5_BASE, arch="moe", n_layers=6, n_experts=4, moe_topk=2, expert_hidden=384),
+    "amllm_f5": dict(F5_BASE, arch="amllm", n_modules=6, experts_per_module=4, module_topk=1, expert_topk=2,
+                     expert_hidden=384, n_hops=6, halt_rule="survival", halt_threshold=0.5, unshared_attention=True,
+                     route_weighting="straight_through", ponder_coefficient=0.02),
 }
 
 
@@ -75,9 +108,35 @@ def parse_set(items: list[str]) -> dict:
     return out
 
 
-FIELDS = ["preset", "seed", "arch", "eval_mode", "params_total", "params_non_embedding", "val_loss", "val_bpb", "val_ppl",
+# val_bpb: bits per byte on the byte corpus. On a BPE corpus the training report's "val_bpb" is bits per *token*
+# (loss / ln 2); it is written as val_bits_per_token and val_bpb is left empty (exact bits/byte: amllm.f5eval).
+FIELDS = ["preset", "seed", "arch", "eval_mode", "params_total", "params_non_embedding", "val_loss", "val_bpb",
+          "val_bits_per_token", "val_ppl",
           "mean_hops", "p95_hops", "flops_per_token", "flops_per_token_ideal", "median_batch_ms",
           "train_tokens_per_s", "train_seconds", "expert_usage_entropy", "expert_usage_entropy_max", "dead_experts", "max_expert_share"]
+
+
+def check_reusable(run_dir: Path, cfg: ModelConfig, tc: TrainConfig, allow_legacy: bool = False) -> None:
+    """--skip-existing may reuse a finished run only if model/train configuration, data split and training code
+    are identical. Runs stored before the code hash was recorded need an explicit allow_legacy."""
+    saved = json.loads((run_dir / "config.json").read_text())
+    problems = []
+    if ModelConfig.from_dict(saved["model"]) != cfg:  # newly added fields at their default compare equal
+        problems.append("model configuration")
+    stored_train = {k: v for k, v in saved["train"].items() if k in asdict(tc)}
+    if stored_train != {k: v for k, v in asdict(tc).items() if k in saved["train"]}:
+        problems.append("training configuration")
+    if saved.get("data_split_id") != split_id(tc.data):
+        problems.append("data split (corpus content changed)")
+    stored_code = saved.get("train_code_sha256")
+    if stored_code is None:
+        if not allow_legacy:
+            problems.append("training-code hash not recorded (legacy run; pass --allow-legacy-reuse to accept)")
+    elif stored_code != env.train_code_hash():
+        problems.append("training code")
+    if problems:
+        raise SystemExit(f"{run_dir}: cannot reuse with --skip-existing, differs in: {', '.join(problems)}; "
+                         "use a new --name or remove the run")
 
 
 def write_summary(path: Path, rows: list[dict]) -> None:
@@ -104,8 +163,12 @@ def main():
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--data", default="data/ts_corpus")
     p.add_argument("--eval-every", type=int, default=1000)
-    p.add_argument("--skip-existing", action="store_true")
-    p.add_argument("--dispatch", default="bmm", help="training dispatch; bmm is numerically equivalent to loop (tested)")
+    p.add_argument("--skip-existing", action="store_true",
+                   help="reuse finished runs whose configuration, data split and training code are identical")
+    p.add_argument("--allow-legacy-reuse", action="store_true",
+                   help="with --skip-existing: also reuse runs stored before the training-code hash was recorded")
+    p.add_argument("--dispatch", default="bmm", choices=["loop", "bmm", "grouped"],
+                   help="training dispatch; bmm is numerically equivalent to loop (tested); triton is inference only")
     p.add_argument("--set", nargs="*", default=[], help="key=value overrides applied to every amllm-arch preset")
     a = p.parse_args()
     overrides = parse_set(a.set)
@@ -124,14 +187,7 @@ def main():
             tc = TrainConfig(data=a.data, steps=a.steps, batch=a.batch, lr=a.lr, seed=seed,
                              eval_every=a.eval_every, dispatch=a.dispatch, run_dir=str(run_dir))
             if a.skip_existing and (run_dir / "report.json").exists():
-                # reuse only if the stored configuration is identical (newly added config fields at their default are accepted)
-                saved = json.loads((run_dir / "config.json").read_text())
-                same_model = ModelConfig.from_dict(saved["model"]) == cfg
-                same_train = {k: v for k, v in saved["train"].items() if k in asdict(tc)} == {
-                    k: v for k, v in asdict(tc).items() if k in saved["train"]}
-                if not (same_model and same_train):
-                    raise SystemExit(f"{run_dir}: stored config differs from the requested one; "
-                                     "use a new --name instead of --skip-existing")
+                check_reusable(run_dir, cfg, tc, a.allow_legacy_reuse)
                 report = json.loads((run_dir / "report.json").read_text())
             else:
                 print(f"\n=== {a.name}: {preset} seed={seed} ===", flush=True)
@@ -143,6 +199,8 @@ def main():
                              "train_tokens_per_s": round(report["train_tokens_per_s"]),
                              "train_seconds": round(report["train_seconds"], 1),
                              **{k: e[k] for k in FIELDS if k in e}})
+                if is_token_corpus(a.data):
+                    rows[-1]["val_bits_per_token"], rows[-1]["val_bpb"] = rows[-1]["val_bpb"], ""
             write_summary(out / "summary.csv", rows)
     print(f"\nwrote {out / 'summary.csv'}")
 
