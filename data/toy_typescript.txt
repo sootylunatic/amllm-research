@@ -1,0 +1,28 @@
+// Tiny synthetic training demo: not a benchmark or meaningful TypeScript corpus.
+export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
+export async function fetchItem(id: string): Promise<Result<string>> {
+  if (id.length === 0) return { ok: false, error: 'empty id' };
+  return { ok: true, value: id.trim() };
+}
+
+interface User { id: number; email: string; isActive: boolean }
+function onlyActive(users: User[]): User[] {
+  return users.filter(user => user.isActive);
+}
+
+function deduplicate<T>(items: T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  return items.filter(item => {
+    const value = key(item);
+    if (seen.has(value)) return false;
+    seen.add(value); return true;
+  });
+}
+
+async function withRetry<T>(run: () => Promise<T>, attempts: number): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try { return await run(); } catch (error) { lastError = error; }
+  }
+  throw lastError;
+}

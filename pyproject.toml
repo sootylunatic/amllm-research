@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adaptive-modular-llm"
+version = "0.2.1"
+description = "Research prototype: hierarchical sparse module routing and adaptive compute depth"
+requires-python = ">=3.10"
+dependencies = ["torch>=2.3", "numpy>=1.24"]
+license = {text = "MIT"}
+readme = "README.md"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+analysis = ["matplotlib>=3.8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

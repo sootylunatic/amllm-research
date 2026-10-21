@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.env
+.env.*
+# corpora are rebuilt locally (see data/README.md); model weights and run outputs are not part of this repository
+data/*
+!data/toy_typescript.txt
+!data/README.md
+!data/README.hu.md
+results/*
+!results/README.md
+!results/README.hu.md
+!results/summary.csv
