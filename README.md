@@ -27,7 +27,8 @@ The prototype combines three mechanisms:
 ## Contents
 
 ```text
-src/amllm/   model, routing, data, training, experiments, profiling, analysis
+src/amllm/   model, routing, data, training, experiments, profiling, analysis, fast inference paths, generation,
+             coding evaluation, pre-registered gate evaluator
 tests/       pytest suite (CPU; additional CUDA/bf16 tests run when a GPU is present)
 docs/        architecture, methodology, technical decision records (English and Hungarian)
 data/        a tiny toy file only; corpora are rebuilt locally (data/README.md)
@@ -52,9 +53,14 @@ uv pip install --python .venv/bin/python -e '.[dev,analysis]'
 
 ## Limitations
 
-- Byte-level tokens and ~0.3–2.5M parameters, trained on ~14 MB of open-source TypeScript.
-- Latency is a full-sequence forward pass. Generated tokens/s are not measured, because there is no KV-cache yet.
+- Phase 1 used byte-level tokens and ~0.3–2.5M parameters, trained on ~14 MB of open-source TypeScript. The
+  phase 2 tooling adds a byte-level BPE corpus builder (permissive licences only, package hold-out) for ~17M-parameter
+  models; phase 2 results are not published yet.
+- Generation uses a KV-cache (`amllm.generate`); the fast inference path (Triton grouped GEMM, static execution, CUDA
+  Graph) is inference only. Speed gains measured so far come from execution, not from skipped compute.
 - All weights stay in GPU memory, so no VRAM saving is claimed.
+- The coding evaluation (`amllm.f5eval`) executes generated code only inside a bubblewrap sandbox and needs Node.js and
+  a TypeScript package (`AMLLM_TYPESCRIPT`); the related tests are skipped without them.
 - No training data and no model weights are published (see [data/README.md](data/README.md)).
 
 ## Notes

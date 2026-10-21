@@ -28,7 +28,8 @@ A prototípus három mechanizmust kombinál:
 ## Tartalom
 
 ```text
-src/amllm/   modell, routing, adat, tanítás, kísérletek, profilozás, elemzés
+src/amllm/   modell, routing, adat, tanítás, kísérletek, profilozás, elemzés, gyors inferenciautak, generálás,
+             kódolási értékelés, előre regisztrált kapukiértékelő
 tests/       pytest-tesztek (CPU; GPU esetén további CUDA/bf16 tesztek)
 docs/        architektúra, módszertan, technikai döntési rekordok (angolul és magyarul)
 data/        csak egy apró mintafájl; a korpuszok helyben épülnek újra (data/README.hu.md)
@@ -53,9 +54,14 @@ uv pip install --python .venv/bin/python -e '.[dev,analysis]'
 
 ## Korlátok
 
-- Bájtszintű tokenek, ~0,3–2,5M paraméter, ~14 MB nyílt forrású TypeScript-kódon tanítva.
-- A késleltetés teljes szekvenciás forward. Generált token/s-t nem mérünk, mert még nincs KV-cache.
+- Az 1. fázis bájtszintű tokenekkel és ~0,3–2,5M paraméterrel dolgozott, ~14 MB nyílt forrású TypeScript-kódon. A 2.
+  fázis eszközei közé bekerült egy bájtszintű BPE-korpuszépítő (csak megengedő licencek, csomag szerinti hold-out)
+  ~17M paraméteres modellekhez; a 2. fázis eredményei még nincsenek publikálva.
+- A generálás KV-cache-t használ (`amllm.generate`); a gyors inferenciaút (Triton grouped GEMM, statikus végrehajtás,
+  CUDA Graph) csak inferenciára való. Az eddig mért gyorsulás a végrehajtásból jön, nem kihagyott számításból.
 - Minden súly a GPU-memóriában marad, ezért VRAM-megtakarítást nem állítunk.
+- A kódolási értékelés (`amllm.f5eval`) a generált kódot csak bubblewrap-sandboxban futtatja, és Node.js-t, valamint
+  egy TypeScript-csomagot (`AMLLM_TYPESCRIPT`) igényel; ezek nélkül a kapcsolódó tesztek kimaradnak.
 - Tanítóadat és modellsúly nincs publikálva (lásd [data/README.hu.md](data/README.hu.md)).
 
 ## Megjegyzés
