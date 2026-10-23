@@ -2,39 +2,99 @@
 
 # AM-LLM — Adaptive Modular Language Model
 
-**Open research prototype.** Shared expert banks, hierarchical routing, recurrent hops, and optional adaptive computation. [Tests](https://github.com/sootylunatic/amllm-research/actions) · [MIT License](LICENSE)
+![status](https://img.shields.io/badge/status-research%20prototype%20%E2%80%94%20main%20hypothesis%20not%20yet%20supported-orange)
+[![tests](https://github.com/sootylunatic/amllm-research/actions/workflows/tests.yml/badge.svg)](https://github.com/sootylunatic/amllm-research/actions) ![license](https://img.shields.io/badge/license-MIT-blue)
 
-> **Evidence snapshot — 2026-10-23:** The original compute-efficiency hypothesis is **not supported at the tested ~17M parameter scale**. The best FixedDepth AM-LLM variants approach MoE validation loss with **24–31% more estimated FLOPs**. Current learned halting suffers from a soft-training / hard-inference discrepancy. These are findings, not a claim of superiority.
+**An open research programme, not a product.** AM-LLM asks whether a language model can learn *which reusable processing units to run, in which order and how many times* for each token, and so approach the quality of a Dense Transformer or a Mixture-of-Experts (MoE) with less **actually executed** compute. This repository holds the prototype code, the tests, the decisions taken along the way and an honest account of what has and has not been shown. Negative results are part of the record.
 
-## What are we investigating?
+## The main goal
 
-Can a model learn **which reusable modules or experts to run, in which order and how often**, approaching Dense/MoE quality using less **actually executed compute**? The A–D programme also considers **B** small inference GPU working sets, **C** practical autoregressive generation speed, and **D** useful large-model capability on commodity hardware. A 16 GB VRAM target and ≥60 decoded tok/s are **aspirations, not measured achievements**. [Goals and evaluation](docs/00-goals/RESEARCH_GOALS.md).
+Run a **large, genuinely useful language model — first of all for coding — on a consumer GPU**: much of the quality of a far bigger Dense/MoE model with a fraction of the *executed* compute, a small *inference* memory footprint (long-term target: 16 GB VRAM) and fast local generation (long-term target: ≥ 60 decoded tokens/s). Illustrative long-term scales such as ~27B stored parameters in hundreds of modules are **aspirations, not results**. Everything below is the step-by-step test of whether this is even possible, starting small and refusing to scale up before the small model shows a gain.
 
-## Results so far
+## The hypothesis
 
-F5 / overnight: ~17M parameters, 8,192 BPE vocabulary, context 512, 12 configurations × 3 seeds. Mean validation NLL (nat/token); FLOP ratios are **analytical estimates, not measured decode speed**.
+> **H (central):** a model with a **shared bank of reusable modules**, **two-level routing** (module, then expert) and **learned per-token depth** can reach the quality of a Dense Transformer or a fixed-depth MoE with **less actually executed compute**.
+>
+> **H₀ (null):** the quality loss, routing overhead and memory traffic cancel the benefit. The programme accepts this outcome if the data say so.
 
-| Configuration | Val NLL ↓ | Est. FLOPs / MoE ↓ |
-|---|---:|---:|
-| 6-layer MoE control | **2.1166** | 1.00× |
-| 6-hop FixedDepth | 2.1625 | 1.00× |
-| 8-hop FixedDepth | 2.1212 | 1.24× |
-| 6-hop FixedDepth, Top-2/Top-2 | 2.1366 | 1.31× |
-| FixedDepth, smaller experts | 2.1804 | 0.85× |
+It is stated so that it can fail. The first round was judged against thresholds fixed in advance: validation loss at most ~5% worse than the control, at least ~15% less executed compute (or better quality at equal compute), at most ~10% latency regression, a router that demonstrably learns, working dynamic depth, and the same conclusion on three seeds.
 
-Paired 95% confidence intervals for the top two AM–MoE NLL differences include zero; **this does not establish equivalence**. The 0.85×-compute region remains inconclusive without matched controls. The old test split was visible to the experiment planner, so it is **not an untouched holdout**.
+| Part of the hypothesis | Status |
+|---|---|
+| **H1** the router learns stable, input-dependent routes | **Supported** (small models) |
+| **H2** same quality with less executed compute | **Not supported at ~17M** |
+| **H3** easy tokens need fewer steps (adaptive depth) | Partly: depth varies with content, but the current halting mechanism loses quality |
+| **H4** specialisation helps coding quality | Cannot be decided at this scale |
+| **H5** predictable module loading lowers memory | Not implemented, not tested |
 
-[Results and limitations](results/RESEARCH_REPORT.md) · [Evidence status](docs/RESEARCH_STATUS.md) · [Legacy E00–E09 summary](results/summary.csv)
+## The idea
 
-## Two branches of the architecture
+```text
+Dense / MoE                          AM-LLM
+token ─► layer 1 ─► layer 2 ─► …     token ─► [ module router ] ─► module ─► [ expert router ] ─► experts
+         (each layer has its own            └────────── one shared bank, used again in every hop ◄────────┘
+          weights, fixed depth)             ─► hop 1 ─► hop 2 ─► … ─► (optional) per-token halting: another hop?
+```
 
-**FixedDepth** reuses one expert bank over fixed 4/6/8 hops; per-hop attention has separate weights. It is a useful control, not proof of adaptive compute. **AdaptiveDepth** learns token-wise stopping, but the existing soft/hard mismatch causes substantial degradation. The six-hop FixedDepth is structurally close to an **expert-tied MoE**: expert weight reuse, two-level routing, and shared normalization change together and **have not yet been individually ablated**. [Architecture guide](docs/ARCHITECTURE_GUIDE.md).
+- **A shared module bank:** M modules, each a few small expert networks, reused in every processing step ("hop").
+- **Two-level routing:** per token and hop a router picks modules, and inside them an expert router picks experts.
+- **Adaptive depth (optional):** a halting head decides per token whether another hop is needed.
 
-## Contributing
+Two members of the family are distinguished throughout: **FixedDepth** (the bank and the routing with a fixed number of hops) and **AdaptiveDepth** (the same with learned, input-dependent depth). FixedDepth is a legitimate control and research subject, but it does **not** by itself test the dynamic-compute part of the hypothesis. [Architecture guide](docs/ARCHITECTURE_GUIDE.md) · [v0.2.1 implementation](docs/01-architecture/ARCHITECTURE.md).
 
-We welcome independent critiques, tests, controlled ablations, profiling, and **negative results**. See [specific open research questions](docs/OPEN_QUESTIONS.md), [contribution guide](CONTRIBUTING.md), and [Issues](https://github.com/sootylunatic/amllm-research/issues).
+## The four goals A–B–C–D
 
-## Quick start (smoke test, not F5 reproduction)
+The main goal is split into four claims that are proven separately, because a good result on one is easily mistaken for another.
+
+| | The question | What counts as proof | What does **not** count | Status |
+|---|---|---|---|---|
+| **A** Quality per executed compute | Same quality with less *executed* compute than a matched Dense/MoE? (the original scientific hypothesis, H2) | A pre-registered, reproduced quality–compute advantage over matched controls, on independent data | Lower *ideal* FLOP that is not executed; fewer average hops alone; better loss with more compute | **Not supported at ~17M**: the best variants reach MoE loss with 24–31% more estimated FLOP |
+| **B** Inference memory | A smaller real GPU working set, with rarely used weights kept in RAM or on disk? | Measured inference VRAM (weights, KV-cache, buffers) and host→GPU traffic with a working offload | Training memory; a cache *simulation*; fewer total parameters as such | **Not shown** |
+| **C** Generation speed | Real autoregressive decode at least MoE-like, later better? | Measured prefill/decode tokens/s, TTFT, latency percentiles, same GPU and backend as the MoE control | Training tokens/s; full-sequence forward time | **Not shown**; first measurement: AM-LLM 632 vs MoE 884 tok/s at batch 1 |
+| **D** Capability | Useful coding and problem-solving ability of a much larger model on consumer hardware, with A, B and C together? | Independent, leakage-free coding benchmarks against much larger models | A low loss at 17M extrapolated to 27B or 200B | **Long-term ambition, not tested** |
+
+The goals are ordered by dependency: B, C and D only matter if A holds. [How results are judged](docs/00-goals/RESEARCH_GOALS.md) · [Evidence status](docs/RESEARCH_STATUS.md).
+
+## The research programme at a glance
+
+| Phase | Scale | What was asked | What came out |
+|---|---|---|---|
+| **v0.1 prototype** (2026-10-20) | byte-level, tiny | Does the mechanism run at all? | Yes: routing, halting, tests (4). |
+| **Phase 1 — E00–E09** | byte-level, 0.3–2.5M parameters | Does it match Dense/MoE with less compute? Controlled comparison, 3 seeds, audited. | The router **learns** (19.9% lower loss than random routing). Per-hop attention is the biggest quality factor. At equal active compute AM-LLM was 6.8% worse than Dense and 14.5% worse than MoE, and slower on the GPU. The preregistered go/no-go gate **failed**. |
+| **Phase 2 — F1–F4** | byte-level | Can the paper saving become a real one? | Top-1 routing with a gradient works; bucketed skipping and kernel work (Triton, CUDA Graph, KV-cache decode) gave partial results and no general decode win. |
+| **F5** (exploratory) | ~17M, 8,192 BPE | Do the effects survive a larger model and real code? | The quality gate **failed**; learned halting loses a lot of quality when truncated at inference. |
+| **Overnight round** (2026-10-22/23) | ~17M | 12 configurations × 3 seeds | The best FixedDepth variants approach MoE loss with **24–31% more** estimated FLOP; no variant matches MoE with less compute. |
+| **Round V3** (in progress) | ~17M | Why does halting fail? Which part of the family helps: expert tying, hierarchical routing, shared normalisation? | Preregistered, controlled ablations are running; **results are published after the round is closed.** |
+
+The detailed numbers, confidence intervals and limitations are in the [research report](results/RESEARCH_REPORT.md); the decisions behind each step are the [technical records](docs/04-decisions/README.md).
+
+## What we have learned so far
+
+1. **Routing is learned and used.** In the small models the learned routing reaches a ~20% lower loss than random routing with the same parameters and compute.
+2. **Hop-specific attention matters most** in the small models; it is not a capacity artefact.
+3. **At ~17M no variant gets MoE quality with fewer executed FLOP.** The six-hop FixedDepth is structurally an *expert-tied MoE*; tying, two-level routing and shared normalisation change together and have not yet been separated.
+4. **Current learned halting does not give a usable trade-off:** it is trained softly (all hops run) and applied hard (tokens stop), and that mismatch costs a lot. This is evidence against this *mechanism*, not against adaptive computation in general.
+5. **Real speed has barely been measured:** one early batch-1 decode run had AM-LLM at 632 and MoE at 884 tokens/s.
+
+## What is *not* claimed
+
+No large-model result, no VRAM saving, no ≥ 60 tok/s, no superiority over MoE or Dense. The old test split was visible to an automated experiment planner and is not an untouched holdout. With three seeds the confidence intervals are wide: an interval that contains zero does **not** show equivalence. Estimated FLOP is not measured GPU work. Byte-level and BPE losses are not comparable.
+
+## Where you can help
+
+Controlled ablations, hard-aware halting, matched controls, profiling, replication and negative results are all welcome: [open research questions](docs/OPEN_QUESTIONS.md) · [how to contribute](CONTRIBUTING.md) · [Issues](https://github.com/sootylunatic/amllm-research/issues).
+
+## Repository map
+
+```text
+src/amllm/   model, routing, data, training, experiments, profiling, fast inference paths, generation, evaluation
+tests/       pytest suite (CPU; extra CUDA tests run when a GPU is present)
+docs/        goals, architecture guide, methodology, technical decision records (English and Hungarian)
+results/     research report, E00–E09 summary table
+data/        a tiny toy file only; corpora are rebuilt locally (data/README.md)
+```
+
+## Quick start (smoke test, not a reproduction of the reported runs)
 
 ```bash
 uv venv --python 3.12 .venv
@@ -44,4 +104,4 @@ uv pip install --python .venv/bin/python -e '.[dev,analysis]'
 .venv/bin/python -m amllm.train --data data/toy_typescript.txt --steps 40 --batch 4 --max-seq-len 64 --run-dir runs/smoke
 ```
 
-The complete corpus, checkpoints and per-run logs are **not released**, so public source alone does not yet reproduce the 36 runs. No large-model VRAM or ≥60 tok/s claim is made. Claude and Codex assisted implementation and review; findings remain open to independent scrutiny.
+The full corpus, model weights and per-run logs are **not released**, so the public source alone does not reproduce the reported runs; the [report](results/RESEARCH_REPORT.md) is an audited secondary summary. MIT licence, see [LICENSE](LICENSE). Claude and Codex assisted implementation and review; all findings remain open to independent scrutiny.
