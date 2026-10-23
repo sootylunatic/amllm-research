@@ -123,7 +123,7 @@ def parse_set(items: list[str]) -> dict:
 # (loss / ln 2); it is written as val_bits_per_token and val_bpb is left empty (exact bits/byte: amllm.f5eval).
 FIELDS = ["preset", "seed", "arch", "eval_mode", "params_total", "params_non_embedding", "val_loss", "val_bpb",
           "val_bits_per_token", "val_ppl",
-          "mean_hops", "p95_hops", "flops_per_token", "flops_per_token_ideal", "median_batch_ms",
+          "mean_hops", "p95_hops", "flops_per_token", "flops_per_token_ideal", "flops_per_token_executed", "median_batch_ms",
           "train_tokens_per_s", "train_seconds", "expert_usage_entropy", "expert_usage_entropy_max", "dead_experts", "max_expert_share"]
 
 

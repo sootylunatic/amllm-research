@@ -39,12 +39,24 @@ class ModelConfig:
     router_mode: str = "learned"
     ponder_coefficient: float = 0.002
     balance_coefficient: float = 0.01
+    # FD01: number of distinct module banks; hop h uses bank h * bank_groups // n_hops (1 = one bank shared by all hops,
+    # n_hops = a separate bank per hop). Banks of groups > 0 are created after every other module, so defaults are unchanged.
+    bank_groups: int = 1
+    # FD03: normalisation in front of the bank. shared = one LayerNorm for all hops; per_hop = one LayerNorm per hop;
+    # hop_affine = the shared LayerNorm followed by a per-hop scale and shift (initialised to identity)
+    bank_norm: str = "shared"
+    # AD02a: weight of the anytime (multi-exit) loss. 0 = off. > 0: in training the state after every hop except the last
+    # is read out through the final norm and the shared head and trained on the next token; loss += weight * mean over hops
+    anytime_weight: float = 0.0
 
     def __post_init__(self):
         assert self.arch in ARCHS, self.arch
         assert self.halt_rule in HALT_RULES, self.halt_rule
         assert self.route_weighting in ("topk_softmax", "full_softmax", "straight_through"), self.route_weighting
         assert self.router_mode in ("learned", "random"), self.router_mode
+        assert self.anytime_weight >= 0.0, self.anytime_weight
+        assert self.bank_norm in ("shared", "per_hop", "hop_affine"), self.bank_norm
+        assert 1 <= self.bank_groups <= self.n_hops, (self.bank_groups, self.n_hops)
         assert self.d_model % self.n_heads == 0
         assert 1 <= self.module_topk <= self.n_modules
         assert 1 <= self.expert_topk <= self.experts_per_module

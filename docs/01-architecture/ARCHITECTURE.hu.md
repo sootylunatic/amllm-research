@@ -12,7 +12,7 @@ superseded_by: []
 
 [English](ARCHITECTURE.md) | **Magyar**
 
-> **Dokumentumhatókör (2026-10-23):** ez a **v0.2.1 történeti kódállapotának pontos leírása**. Nem a későbbi F5 vagy éjszakai variánsok automatikus specifikációja. A projekt aktuális **A–B–C–D céljai**: [../00-goals/RESEARCH_GOALS.hu.md](../00-goals/RESEARCH_GOALS.hu.md). Az eredeti A kérdésben a tényleges aktív számítás megtakarítása a fő bizonyíték; a memória (B), generálás (C) és nagy modellképesség (D) **külön** vizsgálandó. Az alábbi architektúramegállapításokat ettől nem módosítottuk.
+> **Dokumentumhatókör (2026-10-23):** ez a **v0.2.1 történeti kódállapotának pontos leírása**. Nem a későbbi F5 vagy éjszakai variánsok specifikációja: azokat az ARCHITECTURE_F5.hu.md írja le. A projekt aktuális **A–B–C–D céljai**: [../00-goals/RESEARCH_GOALS.hu.md](../00-goals/RESEARCH_GOALS.hu.md). Az eredeti A kérdésben a tényleges aktív számítás megtakarítása a fő bizonyíték; a memória (B), generálás (C) és nagy modellképesség (D) **külön** vizsgálandó. Az alábbi architektúramegállapításokat ettől nem módosítottuk.
 
 
 # AM-LLM — architektúra és implementáció (v0.2.1)

@@ -1,76 +1,47 @@
 [English](README.md) | **Magyar**
 
-# AM-LLM — Adaptive Modular Language Model (kutatási prototípus)
+# AM-LLM — Adaptív moduláris nyelvi modell
 
-[![tests](https://github.com/sootylunatic/amllm-research/actions/workflows/tests.yml/badge.svg)](https://github.com/sootylunatic/amllm-research/actions/workflows/tests.yml)
-![status](https://img.shields.io/badge/status-research%20prototype%20%E2%80%94%20main%20hypothesis%20not%20yet%20supported-orange)
-![license](https://img.shields.io/badge/license-MIT-blue)
+**Nyílt kutatási prototípus.** Közös expertbank, hierarchikus routing, ismételt hopok és opcionális adaptív számítás. [Tesztek](https://github.com/sootylunatic/amllm-research/actions) · [MIT licenc](LICENSE)
 
-Kis, tanulmányi jellegű kutatási prototípus. A modellek apró, bájtszintű nyelvi modellek, egyetlen fogyasztói GPU-n
-tanítva. Ez nem termék, és semmilyen állítást nem tesz nagy modellek teljesítményéről.
-
-> **Állapot (2026-10-23).** Az első kísérletsorozatot (E00–E09) auditálták és javították; az előre rögzített go/no-go
-> kapuja **nem** teljesült. A későbbi fázisok (F1–F5 és egy éjszakai kör ~17M paraméteres modelleken) feltáró jellegűek.
-> Eddig ezen a skálán **nem** támasztják alá a hatékonysági hipotézist: a legjobb változatok MoE-közeli minőséget
-> érnek el, de több számítással, miközben a tanult routing valóban jobb a véletlennél. A célok és az eredmények
-> megítélésének szabályai: [docs/00-goals/RESEARCH_GOALS.hu.md](docs/00-goals/RESEARCH_GOALS.hu.md).
-> A [`results/summary.csv`](results/README.hu.md) csak az első sorozatot tartalmazza; a későbbi eredmények itt még nincsenek közzétéve.
+> **Bizonyítékok — 2026-10-23:** Az eredeti számítási hatékonysági hipotézist a vizsgált ~17M paraméteres skálán **nem támogatják az adatok**. A legjobb FixedDepth változatok MoE-közeli validációs loss-t értek el **24–31%-kal több becsült FLOP** mellett. A jelenlegi halting soft tanítás és hard inferencia között jelentős eltérés van. Ez nem kész nagy nyelvi modell, és nem bizonyított teljesítményelőny.
 
 ## Kutatási kérdés
 
-Megtanulhatja-e egy nyelvi modell, hogy tokenenként **mely feldolgozó egységeket, milyen sorrendben és hányszor**
-futtasson, és így **kevesebb aktív számítással** érje el egy Dense Transformer vagy egy fix mélységű
-Mixture-of-Experts minőségét?
+Megtanulhatja-e egy modell, hogy **mely újrafelhasználható modulokat/experteket, milyen sorrendben és hányszor** használjon, Dense/MoE-közeli minőséget elérve **kevesebb tényleges számítással**? A B–D célok: kisebb valós inference GPU-munkakészlet, gyors dekódolás és hasznos nagy modellképesség fogyasztói hardveren. A 16 GB VRAM és ≥60 dekódolt tok/s **hosszú távú cél**, nem bizonyított eredmény. [A–D célok](docs/00-goals/RESEARCH_GOALS.hu.md).
 
-A prototípus három mechanizmust kombinál:
+## Mérési eredmények
 
-1. **megosztott modulbank**, amelyet a modell ismételten („hopokban”) használ;
-2. **hierarchikus Top-K routing**: egy router modulokat választ, majd minden kiválasztott modul experteket;
-3. **tokenenkénti adaptív mélység**: egy megállási fej dönti el, kell-e további hop.
+F5/éjszaka: ~17M paraméter, 8 192 BPE token, 512 kontextus, 12 konfiguráció × 3 seed. Validációs NLL (nat/token); a FLOP **becslés**, nem dekódolási sebesség.
 
-## Tartalom
+| Konfiguráció | Val NLL ↓ | Becsült FLOP / MoE ↓ |
+|---|---:|---:|
+| 6 rétegű MoE | **2,1166** | 1,00× |
+| FixedDepth, 6 hop | 2,1625 | 1,00× |
+| FixedDepth, 8 hop | 2,1212 | 1,24× |
+| FixedDepth, Top-2/Top-2 | 2,1366 | 1,31× |
+| FixedDepth, kisebb expertek | 2,1804 | 0,85× |
 
-```text
-src/amllm/   modell, routing, adat, tanítás, kísérletek, profilozás, elemzés, gyors inferenciautak, generálás,
-             kódolási értékelés, előre regisztrált kapukiértékelő
-tests/       pytest-tesztek (CPU; GPU esetén további CUDA/bf16 tesztek)
-docs/        architektúra, módszertan, technikai döntési rekordok (angolul és magyarul)
-data/        csak egy apró mintafájl; a korpuszok helyben épülnek újra (data/README.hu.md)
-results/     előzetes összesítő tábla (results/README.hu.md)
-```
+A két legjobb modell párosított 95%-os CI-je tartalmazza a nullát, ami **nem bizonyít ekvivalenciát**. A 0,85×-os változat megfelelő kontroll nélkül nem eldöntött. A régi tesztet a kísérlettervező látta, ezért **nem tiszta holdout**.
 
-Dokumentáció: [kutatási célok (A–D)](docs/00-goals/RESEARCH_GOALS.hu.md) · [docs/01-architecture/ARCHITECTURE.hu.md](docs/01-architecture/ARCHITECTURE.hu.md) · [docs/02-methodology/METHODOLOGY.hu.md](docs/02-methodology/METHODOLOGY.hu.md) ·
-[docs/04-decisions/](docs/04-decisions/README.hu.md)
+[Eredmények és korlátok](results/RESEARCH_REPORT.hu.md) · [Állapot](docs/RESEARCH_STATUS.hu.md) · [E00–E09 CSV](results/summary.csv)
 
-## Gyors indítás
+## Két architekturális ág
+
+**FixedDepth:** fix 4/6/8 hop, hoponként külön attention, újrahasznált expertbank. Hasznos kontroll, nem az adaptív számítás igazolása. **AdaptiveDepth:** tanult megállás, ahol a soft/hard eltérés jelenleg minőségromláshoz vezet. A hat hopos FixedDepth szerkezetileg egy **expert-súlymegosztásos MoE-hoz** hasonlít; a bankmegosztás, hierarchikus routing és közös normalizálás hatása egyelőre **nincs külön mérve**. [Architektúra](docs/ARCHITECTURE_GUIDE.hu.md).
+
+## Közreműködés
+
+Várjuk a kontrollált ablációkat, teszteket, profilozást, tudományos kritikát és **negatív eredményeket**. [Nyitott feladatok](docs/OPEN_QUESTIONS.hu.md) · [CONTRIBUTING](CONTRIBUTING.hu.md) · [Issues](https://github.com/sootylunatic/amllm-research/issues).
+
+## Indítás (csak smoke teszt)
 
 ```bash
-# referencia-környezet: Python 3.12, PyTorch 2.11 (CUDA 12.8); a CPU-s tesztek GPU nélkül is futnak
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python torch --index-url https://download.pytorch.org/whl/cu128
+uv pip install --python .venv/bin/python torch --index-url https://download.pytorch.org/whl/cpu
 uv pip install --python .venv/bin/python -e '.[dev,analysis]'
-.venv/bin/pytest -q
-
-# 40 lépéses smoke-futás a mellékelt mintafájlon
+.venv/bin/python -m pytest -q
 .venv/bin/python -m amllm.train --data data/toy_typescript.txt --steps 40 --batch 4 --max-seq-len 64 --run-dir runs/smoke
 ```
 
-## Korlátok
-
-- Az 1. fázis bájtszintű tokenekkel és ~0,3–2,5M paraméterrel dolgozott, ~14 MB nyílt forrású TypeScript-kódon. A 2.
-  fázis eszközei közé bekerült egy bájtszintű BPE-korpuszépítő (csak megengedő licencek, csomag szerinti hold-out)
-  ~17M paraméteres modellekhez; a 2. fázis eredményei még nincsenek publikálva.
-- A generálás KV-cache-t használ (`amllm.generate`); a gyors inferenciaút (Triton grouped GEMM, statikus végrehajtás,
-  CUDA Graph) csak inferenciára való. Az eddig mért gyorsulás a végrehajtásból jön, nem kihagyott számításból.
-- Minden súly a GPU-memóriában marad, ezért VRAM-megtakarítást nem állítunk.
-- A kódolási értékelés (`amllm.f5eval`) a generált kódot csak bubblewrap-sandboxban futtatja, és Node.js-t, valamint
-  egy TypeScript-csomagot (`AMLLM_TYPESCRIPT`) igényel; ezek nélkül a kapcsolódó tesztek kimaradnak.
-- Tanítóadat és modellsúly nincs publikálva (lásd [data/README.hu.md](data/README.hu.md)).
-
-## Megjegyzés
-
-Az implementáció egyes részeinél és a kísérletek átnézésénél Claude és Codex modellek segítettek.
-
-## Licenc
-
-MIT, lásd [LICENSE](LICENSE).
+A teljes korpusz, checkpointok és egyedi naplók **nem nyilvánosak**, így a 36 futás a publikus fájlokból még nem reprodukálható. Valós nagy modell-VRAM vagy ≥60 tok/s eredményt nem állítunk. A fejlesztésben és auditban Claude és Codex is segített; a megállapítások függetlenül vizsgálhatók.

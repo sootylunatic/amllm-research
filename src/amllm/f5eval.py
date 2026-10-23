@@ -405,8 +405,9 @@ def main():
         train_cfg = json.loads((run_dir / "config.json").read_text())["train"]
         default = "fixed" if cfg.arch != "amllm" else "hard_surv_0.5"
         bpb = {}
-        for split, data, loss in (("val", val, report["eval"][default]["val_loss"]),
-                                  ("test", test, report["test_default_mode"]["val_loss"])):
+        for split, data, loss in [("val", val, report["eval"][default]["val_loss"]),
+                                  *([("test", test, report["test_default_mode"]["val_loss"])]
+                                    if report.get("test_default_mode") else [])]:
             n_tok, n_bytes = window_bytes(data, lut, train_cfg["eval_windows"], cfg.max_seq_len)
             bpb[split] = {"loss_nat_per_token": loss, "bits_per_byte": loss * n_tok / n_bytes / math.log(2),
                           "tokens": n_tok, "bytes": n_bytes}

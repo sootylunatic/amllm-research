@@ -12,7 +12,7 @@ superseded_by: []
 
 **English** | [Magyar](ARCHITECTURE.hu.md)
 
-> **Document scope (2026-10-23):** this is the exact **historical v0.2.1 implementation**; it is not an automatic specification for later F5 or overnight branches. Current **A–B–C–D research objectives**: [../00-goals/RESEARCH_GOALS.md](../00-goals/RESEARCH_GOALS.md). Actual active-compute savings (A), real inference memory (B), decode speed (C), and larger-model skill (D) require distinct evidence. The technical description below is preserved.
+> **Document scope (2026-10-23):** this is the exact **historical v0.2.1 implementation**; it does not specify the later F5 or overnight variants: those are described in ARCHITECTURE_F5.md. Current **A–B–C–D research objectives**: [../00-goals/RESEARCH_GOALS.md](../00-goals/RESEARCH_GOALS.md). Actual active-compute savings (A), real inference memory (B), decode speed (C), and larger-model skill (D) require distinct evidence. The technical description below is preserved.
 
 
 # AM-LLM — architecture and implementation (v0.2.1)

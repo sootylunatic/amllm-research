@@ -22,6 +22,13 @@ from .model import AdaptiveModularLM, CausalAttention
 BUCKETS = (0.25, 0.5, 0.75, 1.0)
 
 
+def require_default_bank(model) -> None:
+    """The execution paths below implement one shared bank and one shared bank norm (FD01/FD03 switches off)."""
+    cfg = model.cfg
+    if cfg.bank_groups != 1 or cfg.bank_norm != "shared":
+        raise ValueError("fast/static/KV-cache execution supports bank_groups=1 and bank_norm='shared' only")
+
+
 def bucket_size(n_active: int, context: int, buckets=BUCKETS) -> int:
     for frac in buckets:
         cap = max(1, round(frac * context))
@@ -54,6 +61,7 @@ def _packed_attention(attn: CausalAttention, h: Tensor, idx: Tensor, valid: Tens
 def bucketed_hard_forward(model: AdaptiveModularLM, token_ids: Tensor, threshold: float | None = None,
                           buckets=BUCKETS) -> tuple[Tensor, dict]:
     cfg = model.cfg
+    require_default_bank(model)
     if not (cfg.arch == "amllm" and cfg.attn_per_hop and cfg.halt_rule == "survival"):
         raise ValueError("bucketed execution supports AM-LLM with attention in every hop and survival halting")
     threshold = cfg.halt_threshold if threshold is None else threshold
@@ -121,6 +129,7 @@ def static_hard_forward(model: AdaptiveModularLM, token_ids: Tensor, threshold: 
     weight 0). Same mathematical model as the reference hard forward, but without the per-hop `nonzero` and without
     early exit, so every shape is static and the forward has no host synchronisation (with `grouped` dispatch)."""
     cfg = model.cfg
+    require_default_bank(model)
     if not (cfg.arch == "amllm" and cfg.attn_per_hop and cfg.halt_rule == "survival"):
         raise ValueError("static execution supports AM-LLM with attention in every hop and survival halting")
     threshold = cfg.halt_threshold if threshold is None else threshold

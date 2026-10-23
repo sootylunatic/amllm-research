@@ -140,7 +140,8 @@ def write_summary(experiments: list[str]) -> list[dict]:
                                  if e["expert_usage_entropy_max"] > 0 else None,
                                  "dead_experts": e["dead_experts"] if r["arch"] != "dense" else None,
                                  "max_expert_share": round(e.get("max_expert_share", 0), 4) if r["arch"] != "dense" else None,
-                                 "test_loss_default_mode": round(r["test_default_mode"]["val_loss"], 5) if mode == default_mode(r) else None,
+                                 "test_loss_default_mode": (round(r["test_default_mode"]["val_loss"], 5)
+                                                            if mode == default_mode(r) and r.get("test_default_mode") else None),
                                  "train_tokens": r["train_tokens"], "train_seconds": round(r["train_seconds"], 1),
                                  "train_tokens_per_s": round(r["train_tokens_per_s"]),
                                  "train_peak_vram_mb": r.get("train_peak_vram_mb")})
@@ -207,7 +208,8 @@ def comparison(profile: dict, router: dict) -> dict:
                     "params_non_embedding": reps[0]["parameters"]["non_embedding"],
                     "val_loss": mstd([e["val_loss"] for e in evals]),
                     "val_ppl": mstd([math.exp(e["val_loss"]) for e in evals]),
-                    "test_loss": mstd([r["test_default_mode"]["val_loss"] for r in reps]),
+                    "test_loss": (mstd([r["test_default_mode"]["val_loss"] for r in reps])
+                                  if all(r.get("test_default_mode") for r in reps) else None),
                     "mean_hops": mstd([e["mean_hops"] for e in evals]),
                     "est_mflops_per_token_impl": mstd([e["flops_per_token"] / 1e6 for e in evals]),
                     "est_mflops_per_token_ideal": mstd([e["flops_per_token_ideal"] / 1e6 for e in evals]),

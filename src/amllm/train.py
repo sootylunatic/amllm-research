@@ -58,6 +58,9 @@ class TrainConfig:
     eval_batch: int = 64
     amp: bool = True
     dispatch: str = "loop"  # expert dispatch used for training/eval: loop (true skipping) or bmm
+    # The test split is evaluated (once, default mode) only if asked for. Default off since round V3: a run must not
+    # produce test numbers that can leak into selection; the independent holdout replaces them.
+    eval_test: bool = False
     run_dir: str = "results/run"
 
 
@@ -70,6 +73,7 @@ def evaluate(model, data, cfg: ModelConfig, tc: TrainConfig, device, cats=None, 
     gen_state = torch.cuda.get_rng_state() if device.type == "cuda" else None
     torch.manual_seed(1234)  # random-route mode is reproducible
     losses, hops, cat_all, flops, flops_ideal, times = [], [], [], [], [], []
+    flops_exec, rows_pt = [], []
     mc = ec = None
     for x, y, c in eval_batches(data, tc.eval_windows, tc.eval_batch, cfg.max_seq_len, device, cats):
         if device.type == "cuda":
@@ -86,6 +90,8 @@ def evaluate(model, data, cfg: ModelConfig, tc: TrainConfig, device, cats=None, 
             cat_all.append(c.flatten())
         flops.append(info["flops_per_token"])
         flops_ideal.append(info["flops_per_token_ideal"])
+        flops_exec.append(info["flops_per_token_executed"])
+        rows_pt.append(info["expert_rows_per_token"])
         mc = info["module_counts"].cpu() if mc is None else mc + info["module_counts"].cpu()
         ec = info["expert_counts"].cpu() if ec is None else ec + info["expert_counts"].cpu()
     set_random_routing(model, False)
@@ -108,6 +114,8 @@ def evaluate(model, data, cfg: ModelConfig, tc: TrainConfig, device, cats=None, 
         "mean_hops": h.mean().item(), "p50_hops": h.quantile(0.5).item(), "p95_hops": h.quantile(0.95).item(),
         "hop_histogram": torch.bincount(h.long()).tolist(),
         "flops_per_token": sum(flops) / len(flops), "flops_per_token_ideal": sum(flops_ideal) / len(flops_ideal),
+        # work the dispatch really did, padding rows of the bmm dispatch included (equals flops_per_token for loop/triton)
+        "flops_per_token_executed": sum(flops_exec) / len(flops_exec), "expert_rows_per_token": sum(rows_pt) / len(rows_pt),
         "median_batch_ms": 1000 * sorted(times[1:] or times)[len(times[1:] or times) // 2],
         "module_counts": mc.tolist(), "expert_counts": ec.tolist(),
         "expert_usage_entropy": entropy, "expert_usage_entropy_max": math.log(max(1, usage.numel())),
@@ -151,7 +159,7 @@ def run(cfg: ModelConfig, tc: TrainConfig) -> dict:
 
     emit(f"device={device} arch={cfg.arch} params={params['total']:,} non_embedding={params['non_embedding']:,}")
     gen = torch.Generator().manual_seed(tc.seed)
-    curve, train_curve, tokens, train_time = [], [], 0, 0.0
+    curve, train_curve, tokens, train_time, steps_done = [], [], 0, 0.0, 0
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats()
     amp = tc.amp and device.type == "cuda"
@@ -167,6 +175,12 @@ def run(cfg: ModelConfig, tc: TrainConfig) -> dict:
             logits, info = model(x)
             lm_loss = F.cross_entropy(logits.float().reshape(-1, cfg.vocab_size), y.reshape(-1))
             loss = lm_loss + info["aux_loss"]
+            if cfg.anytime_weight > 0 and "hop_states" in info:  # AD02a: train the intermediate hops to predict, too
+                inter = info["hop_states"][:-1]
+                if inter:
+                    any_loss = sum(F.cross_entropy(model._head(s).float().reshape(-1, cfg.vocab_size), y.reshape(-1))
+                                   for s in inter) / len(inter)
+                    loss = loss + cfg.anytime_weight * any_loss
         opt.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -175,9 +189,14 @@ def run(cfg: ModelConfig, tc: TrainConfig) -> dict:
             torch.cuda.synchronize()
         train_time += time.perf_counter() - start
         tokens += x.numel()
-        if not math.isfinite(lm_loss.item()):
+        if not (math.isfinite(lm_loss.item()) and math.isfinite(loss.item())):
+            # a diverged run is a failed run: no checkpoint, no report.json, a marker and a non-zero exit upstream
             emit(f"step={step} non-finite loss, aborting")
-            break
+            log.close()
+            (run_dir / "FAILED.json").write_text(json.dumps({"reason": "non-finite loss", "step": step,
+                                                             "steps_requested": tc.steps, "lm_loss": str(lm_loss.item())}))
+            raise FloatingPointError(f"non-finite loss at step {step} of {tc.steps} ({run_dir})")
+        steps_done = step + 1
         if step % 25 == 0 or step == tc.steps - 1:
             train_curve.append([step, round(lm_loss.item(), 4), round(info["expected_hops"].item(), 3)])
         if step % 100 == 0 or step == tc.steps - 1:
@@ -189,6 +208,8 @@ def run(cfg: ModelConfig, tc: TrainConfig) -> dict:
                           "mean_hops": r["mean_hops"], "expected_hops_train": info["expected_hops"].item()})
             emit(f"  eval step={step + 1} val_loss={r['val_loss']:.4f} mean_hops={r['mean_hops']:.2f}")
 
+    if steps_done != tc.steps:
+        raise RuntimeError(f"training ended after {steps_done} of {tc.steps} steps ({run_dir})")
     torch.save({"config": cfg.to_dict(), "state_dict": model.state_dict(), "seed": tc.seed}, run_dir / "checkpoint.pt")
     train_peak_mb = round(torch.cuda.max_memory_allocated() / 2**20, 1) if device.type == "cuda" else None
     modes = eval_modes(cfg)
@@ -202,18 +223,25 @@ def run(cfg: ModelConfig, tc: TrainConfig) -> dict:
         emit(f"  final[{mode['name']:>15s}] val_loss={e['val_loss']:.4f} bpb={e['val_bpb']:.3f} "
              f"hops={e['mean_hops']:.2f} (p95 {e['p95_hops']:.0f}) MFLOP/tok={e['flops_per_token'] / 1e6:.3f} "
              f"ideal={e['flops_per_token_ideal'] / 1e6:.3f} ms/batch={e['median_batch_ms']:.1f}")
-    # Held-out test split: evaluated once, in the model's default inference mode only.
-    test_data = load_split(tc.data, "test")
-    test_cats, _ = load_categories(tc.data, "test", test_data)
-    default_mode = {} if cfg.arch != "amllm" else {"hard_halt": True}
-    test_eval = evaluate(model, test_data, cfg, tc, device, test_cats, cat_names, **default_mode)
-    emit(f"  test[default] loss={test_eval['val_loss']:.4f} hops={test_eval['mean_hops']:.2f}")
+    # Held-out test split: only on request (tc.eval_test), once, in the model's default inference mode only.
+    test_default = None
+    if tc.eval_test:
+        test_data = load_split(tc.data, "test")
+        test_cats, _ = load_categories(tc.data, "test", test_data)
+        default_mode = {} if cfg.arch != "amllm" else {"hard_halt": True}
+        test_eval = evaluate(model, test_data, cfg, tc, device, test_cats, cat_names, **default_mode)
+        emit(f"  test[default] loss={test_eval['val_loss']:.4f} hops={test_eval['mean_hops']:.2f}")
+        test_default = {k: test_eval[k] for k in ("val_loss", "val_bpb", "mean_hops", "per_category")}
+    bad = [m for m, e in evals.items() if not all(math.isfinite(e[k]) for k in ("val_loss", "mean_hops", "flops_per_token"))]
+    if bad:
+        (run_dir / "FAILED.json").write_text(json.dumps({"reason": "non-finite evaluation", "modes": bad}))
+        raise FloatingPointError(f"non-finite evaluation result in mode(s) {bad} ({run_dir})")
     report = {
-        "arch": cfg.arch, "parameters": params, "seed": tc.seed, "steps": tc.steps,
+        "arch": cfg.arch, "parameters": params, "seed": tc.seed, "steps": tc.steps, "steps_completed": steps_done,
         "train_tokens": tokens, "train_tokens_per_s": tokens / max(train_time, 1e-9),
         "train_seconds": train_time, "train_dispatch": tc.dispatch, "train_peak_vram_mb": train_peak_mb,
         "train_loss_last": lm_loss.item(), "curve": curve, "train_curve": train_curve,
-        "eval": evals, "test_default_mode": {k: test_eval[k] for k in ("val_loss", "val_bpb", "mean_hops", "per_category")},
+        "eval": evals, "test_default_mode": test_default,
         "eval_peak_vram_mb": round(torch.cuda.max_memory_allocated() / 2**20, 1) if device.type == "cuda" else None,
     }
     (run_dir / "report.json").write_text(json.dumps(report, indent=2))

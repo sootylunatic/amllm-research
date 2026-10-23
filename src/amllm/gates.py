@@ -138,7 +138,8 @@ def quality_compute_gate(stage: str) -> dict:
                    "val_loss_std": statistics.stdev([loss(p, s) for s in runs[p]]) if len(runs[p]) > 1 else 0.0,
                    "val_loss_per_seed": {s: loss(p, s) for s in sorted(runs[p])},
                    "train_code_sha256": next(iter(runs[p].values()))["_config"].get("train_code_sha256"),
-                   "test_loss_mean": statistics.fmean(runs[p][s]["test_default_mode"]["val_loss"] for s in runs[p]),
+                   "test_loss_mean": (statistics.fmean(runs[p][s]["test_default_mode"]["val_loss"] for s in runs[p])
+                                      if all(runs[p][s].get("test_default_mode") for s in runs[p]) else None),
                    "mean_hops": statistics.fmean(default_eval(runs[p][s])["mean_hops"] for s in runs[p]),
                    "ideal_mflops": ideal(p) / 1e6,
                    "impl_mflops": statistics.fmean(default_eval(runs[p][s])["flops_per_token"] for s in runs[p]) / 1e6,

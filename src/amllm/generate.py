@@ -20,6 +20,9 @@ class Generator:
         self.model = model
         cfg = model.cfg
         self.is_amllm = isinstance(model, AdaptiveModularLM)
+        if self.is_amllm:
+            from .fastpath import require_default_bank
+            require_default_bank(model)
         if self.is_amllm and not (cfg.attn_per_hop and cfg.halt_rule in ("survival", "none")):
             raise ValueError("KV-cache decoding supports AM-LLM with attention in every hop and survival/no halting")
         self.units = cfg.n_hops if self.is_amllm else cfg.n_layers

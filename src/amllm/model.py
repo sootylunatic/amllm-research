@@ -100,6 +100,7 @@ class LayeredLM(_ByteLM):
         x = self._embed(token_ids)
         b, t = token_ids.shape
         balance = x.new_zeros(())
+        rows0 = sum(f.experts.rows_computed for f in self.ffns) if cfg.arch != "dense" else 0
         ec = torch.zeros(cfg.n_layers, cfg.n_experts, dtype=torch.long, device=x.device)
         for i in range(cfg.n_layers):
             x = x + self.attns[i](self.attn_norms[i](x))
@@ -120,6 +121,12 @@ class LayeredLM(_ByteLM):
             per_layer = (attention_flops(d, t) + cfg.moe_topk * ffn_flops(d, cfg.expert_hidden)
                          + 2 * d * (1 + cfg.n_experts))
         flops = cfg.n_layers * per_layer + 2 * d * cfg.vocab_size
+        executed, rows_pt = float(flops), 0.0
+        if cfg.arch != "dense":  # padding rows of the bmm dispatch are real work
+            rows = sum(f.experts.rows_computed for f in self.ffns) - rows0
+            routed = cfg.n_layers * cfg.moe_topk * b * t
+            executed += max(0.0, rows - routed) * ffn_flops(d, cfg.expert_hidden) / (b * t)
+            rows_pt = rows / (b * t)
         hops = torch.full((b, t), cfg.n_layers, device=x.device)
         return self._head(x), {
             "aux_loss": cfg.balance_coefficient * balance / cfg.n_layers,
@@ -127,6 +134,7 @@ class LayeredLM(_ByteLM):
             "mean_hops": hops.float().mean(), "expected_hops": hops.float().mean(),
             "hops_per_token": hops, "module_counts": torch.zeros(0, dtype=torch.long),
             "expert_counts": ec, "flops_per_token": float(flops), "flops_per_token_ideal": float(flops),
+            "flops_per_token_executed": executed, "expert_rows_per_token": rows_pt,
             "trace": route_trace,
         }
 
@@ -148,6 +156,31 @@ class AdaptiveModularLM(_ByteLM):
         self.halt_head = nn.Linear(d, 1)
         nn.init.zeros_(self.halt_head.weight)
         nn.init.constant_(self.halt_head.bias, cfg.halt_bias_init)
+        # FD01 / FD03 switches: created last so that default configurations keep their exact initialisation and state-dict keys
+        if cfg.bank_groups > 1:
+            self.extra_banks = nn.ModuleList(
+                HierarchicalModuleBank(d, cfg.n_modules, cfg.module_topk, cfg.experts_per_module, cfg.expert_topk,
+                                       cfg.expert_hidden, cfg.route_weighting, cfg.router_mode)
+                for _ in range(cfg.bank_groups - 1))
+        if cfg.bank_norm == "per_hop":
+            self.extra_step_norms = nn.ModuleList(nn.LayerNorm(d) for _ in range(cfg.n_hops - 1))
+        elif cfg.bank_norm == "hop_affine":
+            self.hop_scale = nn.Parameter(torch.ones(cfg.n_hops - 1, d))
+            self.hop_shift = nn.Parameter(torch.zeros(cfg.n_hops - 1, d))
+
+    def bank_for(self, hop: int) -> HierarchicalModuleBank:
+        group = hop * self.cfg.bank_groups // self.cfg.n_hops
+        return self.bank if group == 0 else self.extra_banks[group - 1]
+
+    def normed(self, hop: int, x: Tensor) -> Tensor:
+        """Normalisation in front of the bank at `hop` (x: [rows, d])."""
+        mode = self.cfg.bank_norm
+        if mode == "per_hop" and hop > 0:
+            return self.extra_step_norms[hop - 1](x)
+        y = self.step_norm(x)
+        if mode == "hop_affine" and hop > 0:
+            return y * self.hop_scale[hop - 1] + self.hop_shift[hop - 1]
+        return y
 
     def forward(self, token_ids: Tensor, *, hard_halt: bool | None = None,
                 halt_rule: str | None = None, halt_threshold: float | None = None,
@@ -171,6 +204,10 @@ class AdaptiveModularLM(_ByteLM):
         ec = torch.zeros(cfg.n_modules, cfg.experts_per_module, dtype=torch.long, device=x.device)
         balance, ponder, hops_run = x.new_zeros(()), x.new_zeros(()), 0
         route_trace = []
+        banks = [self.bank, *(self.extra_banks if cfg.bank_groups > 1 else [])]
+        rows0 = sum(bk.experts.rows_computed for bk in banks)  # FFN rows computed so far (padding included)
+        collect = self.training and cfg.anytime_weight > 0  # AD02a: keep the state after every hop for the exit loss
+        hop_states = []
 
         for hop in range(cfg.n_hops):
             if hard:
@@ -193,16 +230,20 @@ class AdaptiveModularLM(_ByteLM):
             flat = x.reshape(-1, d)
             w_flat = weight.reshape(-1, 1)
             if hard:
-                delta, bal, mc_step, ec_step = self.bank(self.step_norm(flat.index_select(0, idx)))
+                bank = self.bank_for(hop)
+                delta, bal, mc_step, ec_step = bank(self.normed(hop, flat.index_select(0, idx)))
                 flat = flat.index_add(0, idx, delta * w_flat.index_select(0, idx))
                 counts += active
             else:
-                delta, bal, mc_step, ec_step = self.bank(self.step_norm(flat))
+                bank = self.bank_for(hop)
+                delta, bal, mc_step, ec_step = bank(self.normed(hop, flat))
                 flat = flat + w_flat * delta
                 counts += 1
             x = flat.view(b, t, d)
+            if collect:
+                hop_states.append(x)
             if trace:
-                m_idx, g_idx = self.bank.last_route
+                m_idx, g_idx = bank.last_route
                 pos = idx if hard else torch.arange(n_tok, device=x.device)
                 route_trace.append({"positions": pos.cpu(), "modules": m_idx.cpu(), "experts": g_idx.cpu()})
             mc, ec, balance, hops_run = mc + mc_step, ec + ec_step, balance + bal, hops_run + 1
@@ -218,16 +259,23 @@ class AdaptiveModularLM(_ByteLM):
             ponder = counts.float().mean()
         logits = self._head(x)
         if not self.diagnostics:
-            return logits, {"aux_loss": x.new_zeros(()), "hops_per_token": counts, "trace": route_trace,
-                            "attention_applications": attn_apps}
+            out = {"aux_loss": x.new_zeros(()), "hops_per_token": counts, "trace": route_trace,
+                   "attention_applications": attn_apps}
+            if collect:
+                out["hop_states"] = hop_states
+            return logits, out
         expert_calls = float(ec.sum())
         router_flops = float(mc.sum()) / cfg.module_topk * 2 * d * cfg.n_modules + float(mc.sum()) * 2 * d * cfg.experts_per_module
         common = (expert_calls * ffn_flops(d, cfg.expert_hidden) + router_flops) / n_tok + 2 * d * cfg.vocab_size \
             + (2 * d * max(0, hops_run - 1) if rule != "none" else 0)
         flops = common + attn_apps * attention_flops(d, t)
         flops_ideal = common + attn_query_tokens / n_tok * attention_flops(d, t)
+        # executed = routed work plus the padding / idle-expert rows the dispatch really computed (bmm pads every
+        # expert's group to the largest one); equals `flops` for the loop and triton dispatch
+        rows = sum(bk.experts.rows_computed for bk in banks) - rows0
+        flops_executed = flops + max(0.0, rows - expert_calls) * ffn_flops(d, cfg.expert_hidden) / n_tok
         aux = cfg.ponder_coefficient * ponder + cfg.balance_coefficient * balance / max(1, hops_run)
-        return logits, {
+        info = {
             "aux_loss": aux,
             "attention_applications": attn_apps,
             "attention_query_fraction": attn_query_tokens / n_tok,
@@ -238,8 +286,13 @@ class AdaptiveModularLM(_ByteLM):
             "expert_counts": ec.detach(),
             "flops_per_token": flops,
             "flops_per_token_ideal": flops_ideal,
+            "flops_per_token_executed": flops_executed,
+            "expert_rows_per_token": rows / n_tok,
             "trace": route_trace,
         }
+        if collect:
+            info["hop_states"] = hop_states
+        return logits, info
 
 
 def build_model(cfg: ModelConfig) -> nn.Module:
