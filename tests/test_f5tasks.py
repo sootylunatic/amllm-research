@@ -115,7 +115,13 @@ def test_type_error_and_timeout_fail():
 
 
 def test_code_line_detection():
-    assert not has_code_line("\n   \n// comment\n/* block */\n * doc\n")
+    assert not has_code_line("\n   \n// comment\n/* block */\n")
+    # second audit: a multi-line block comment is not code
+    assert not has_code_line("/*\nonly comment text\n*/\n")
+    # a comment opened in the prompt continues into the continuation
+    assert not has_code_line(" * more\n */\n", prompt="/**\n * doc\n")
+    assert has_code_line(" */\nconst a = 1;\n", prompt="/**\n")
+    assert has_code_line('const u = "http://x";\n') and has_code_line("/* x */ const a = 1;\n")
     assert has_code_line("// c\nconst x = 1;\n")
     assert complete_lines("a\nb") == "a\n" and complete_lines("ab") == ""
 
@@ -129,3 +135,80 @@ def test_empty_continuation_scores_zero():
     assert r["valid_continuation_share"] == 0.5
     r = score_continuations(prompts, ["let = ;\n", "  return 2;\n}\n"], TS)
     assert r["valid_continuation_share"] == 0.5
+    r = score_continuations(prompts, ["/*\nonly comment text\n*/\n", "/* a */\n// b\n"], TS)
+    assert r["valid_continuation_share"] == 0.0
+
+
+def test_deferred_scoring_equals_direct(monkeypatch):
+    """Split evaluation (generate on the GPU host, score on the sandbox host) must give task_eval's result."""
+    import amllm.f5eval as fe
+    completions = {f"{t['set']}/{t['name']}": ("  return 0;\n}\nextra\n" if i % 2 else "  no brace\n")
+                   for i, t in enumerate(fe.TASKS)}
+    order = iter([completions[f"{t['set']}/{t['name']}"] for t in fe.TASKS] * 2)
+    monkeypatch.setattr(fe, "greedy", lambda model, ids, steps, device: [0])
+    class Tok:
+        def encode(self, text):
+            return type("E", (), {"ids": [0]})()
+        def decode(self, ids):
+            return next(order)
+    scored = []
+    monkeypatch.setattr(fe, "run_task", lambda sol, task, ts: (scored.append(sol) or (sol.endswith("}\n"), "x")))
+    direct = fe.task_eval(None, Tok(), TS, None)
+    deferred = fe.score_tasks(fe.generate_tasks(None, Tok(), None), TS)
+    assert direct == deferred
+    assert all(r["message"] == "no closing brace" for k, r in direct["tasks"].items()
+               if completions[k] == "  no brace\n")
+
+
+def test_tsc_timeout_fails_only_that_task(monkeypatch, tmp_path):
+    import subprocess as sp
+    import amllm.f5eval as fe
+    def fake_run(cmd, **kw):
+        if "tsc.js" in " ".join(map(str, cmd)):
+            raise sp.TimeoutExpired(cmd, 120)
+        raise AssertionError("the sandbox must not run after a failed compile")
+    monkeypatch.setattr(fe.subprocess, "run", fake_run)
+    assert fe.run_task("x", fe.TASKS[0], tmp_path) == (False, "tsc timeout")
+
+
+def test_evaluation_refuses_a_foreign_corpus_or_mixed_environment(tmp_path, monkeypatch):
+    import json as js
+    import torch as th
+    import amllm.f5eval as fe
+    from amllm.config import ModelConfig
+    data = tmp_path / "corpus"
+    data.mkdir()
+    (data / "tokenizer.json").write_text("{}")
+    import hashlib
+    for name in ("train", "val", "test"):
+        (data / f"{name}.bin").write_bytes(name.encode())
+    (data / "manifest.json").write_text(js.dumps({"tokenizer_sha256": hashlib.sha256(b"{}").hexdigest(),
+                                                  "splits": {n: {"sha256": hashlib.sha256(n.encode()).hexdigest()}
+                                                             for n in ("train", "val", "test")}}))
+    run = tmp_path / "run_s42"
+    run.mkdir()
+    cfg = ModelConfig(arch="dense", d_model=16, n_heads=2, n_layers=1, ffn_hidden=16, max_seq_len=8)
+    (run / "config.json").write_text(js.dumps({"model": cfg.to_dict(), "data_split_id": "other", "train": {"seed": 42}}))
+    (run / "report.json").write_text("{}")
+    th.save({"config": cfg.to_dict(), "state_dict": {}, "seed": 42}, run / "checkpoint.pt")
+    with pytest.raises(SystemExit, match="data split"):
+        fe.check_runs([run], data)
+    from amllm.data import split_id
+    cfgd = js.loads((run / "config.json").read_text())
+    cfgd["data_split_id"] = split_id(data)
+    (run / "config.json").write_text(js.dumps(cfgd))
+    hashes = fe.check_runs([run], data)                               # consistent: accepted, checkpoint hashed
+    assert len(hashes[str(run)]) == 64
+    th.save({"config": cfg.to_dict(), "state_dict": {}, "seed": 43}, run / "checkpoint.pt")
+    with pytest.raises(SystemExit, match="seeds differ"):            # seed-43 weights in the seed-42 run
+        fe.check_runs([run], data)
+    th.save({"config": cfg.to_dict(), "state_dict": {}, "seed": 42}, run / "checkpoint.pt")
+    (data / "val.bin").write_bytes(b"x")                              # a split file changed, manifest unchanged
+    js_m = js.loads((data / "manifest.json").read_text())
+    js_m["splits"]["val"]["sha256"] = "0" * 64
+    (data / "manifest.json").write_text(js.dumps(js_m))
+    with pytest.raises(SystemExit, match="val.bin"):
+        fe.check_runs([run], data)
+    (data / "tokenizer.json").write_text('{"changed": 1}')
+    with pytest.raises(SystemExit, match="tokenizer"):
+        fe.check_runs([run], data)

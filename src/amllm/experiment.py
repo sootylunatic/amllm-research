@@ -101,10 +101,21 @@ PRESETS: dict[str, dict] = {
 
 
 def parse_set(items: list[str]) -> dict:
+    """key=value overrides: true/false, int, float, otherwise the string (e.g. halt_rule=none)."""
     out = {}
     for item in items:
         k, v = item.split("=", 1)
-        out[k] = v.lower() == "true" if v.lower() in ("true", "false") else (float(v) if "." in v or "e" in v else int(v))
+        if v.lower() in ("true", "false"):
+            out[k] = v.lower() == "true"
+            continue
+        for cast in (int, float):
+            try:
+                out[k] = cast(v)
+                break
+            except ValueError:
+                pass
+        else:
+            out[k] = v
     return out
 
 

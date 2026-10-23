@@ -1,14 +1,40 @@
+---
+title: "AM-LLM — experimental methodology and reproduction"
+created: "2026-10-21"
+updated: "2026-10-23"
+status: "ACTIVE"
+scope: "PROJECT"
+source_of_truth: true
+supersedes: []
+superseded_by: []
+---
+
 **English** | [Magyar](METHODOLOGY.hu.md)
+
+> **Protocol scope (2026-10-23):** the material below is the **historical E00–E09 byte-model protocol**. Its „under audit” status describes the situation when written; E09 has since finished. Original E07 and F5 gates remain unchanged. Current A–D objectives: [../00-goals/RESEARCH_GOALS.md](../00-goals/RESEARCH_GOALS.md). F5 BPE and the overnight 36 trainings have separate preregistrations/reports and are not retroactively assessed using this byte-model protocol.
+
+## A–D measurement extension — new studies only
+
+| Objective | Primary evidence | Insufficient proxy |
+|---|---|---|
+| A | task quality vs **executed** FLOPs, genuinely skipped FFN/attention, matched Dense/MoE | ideal FLOPs, average hops |
+| B | inference VRAM residency/peak, weights/KV/scratch, miss rate, transferred bytes/token | training VRAM, cache simulation alone |
+| C | real decode/prefill tokens/sec, TTFT, p50/p95, context and batch under matched hardware/backend | training tokens/sec, full-forward ms |
+| D | independent leakage-resistant coding/debug tasks and larger-model controls | small-model validation loss alone |
+
+**For new protocols:** preserve separate train/val/test and use a fresh holdout where possible because the overnight planner saw test losses; compare matched training/tokenizer and code versions; preregister new gates and report all negative results. Overnight report.
+
 
 # AM-LLM — experimental methodology and reproduction
 
-Related decisions: [ADR-0007](adr/0007-corpus-and-split.md) (data), [ADR-0008](adr/0008-control-models.md)
-(controls), [ADR-0009](adr/0009-measurement-protocol.md) (measurement), [ADR-0014](adr/0014-deterministic-combine-and-diagnostics.md)
-(determinism, diagnostics-off latency). Model details: [ARCHITECTURE.md](ARCHITECTURE.md).
+
+Related decisions: [ADR-0007](../04-decisions/0007-corpus-and-split.md) (data), [ADR-0008](../04-decisions/0008-control-models.md)
+(controls), [ADR-0009](../04-decisions/0009-measurement-protocol.md) (measurement), [ADR-0014](../04-decisions/0014-deterministic-combine-and-diagnostics.md)
+(determinism, diagnostics-off latency). Model details: [../01-architecture/ARCHITECTURE.md](../01-architecture/ARCHITECTURE.md).
 
 > **Status: preliminary — under audit.** The first experiment series was reviewed by an external audit; measurement and
 > attribution issues were found and are being re-measured (stage E09). Results published in
-> [`results/summary.csv`](../results/README.md) are preliminary.
+> [`results/summary.csv`](../../results/README.md) are preliminary.
 
 ## 1. Stages
 
@@ -53,7 +79,7 @@ Related decisions: [ADR-0007](adr/0007-corpus-and-split.md) (data), [ADR-0008](a
 |---|---|
 | val/test loss | mean cross-entropy in nat/byte; `bpb = loss / ln 2`; perplexity = `exp(loss)` (per byte) |
 | mean hops | executed module-bank calls per token (Dense/MoE: number of layers) |
-| estimated FLOP/token | analytic forward estimate: "routed" (selected assignments; "implemented" in phase 1), "executed" (incl. `bmm` padding) and "ideal" ([ARCHITECTURE.md §4](ARCHITECTURE.md#4-flop-estimate-forward-per-token-multiply-add--2-flops)) |
+| estimated FLOP/token | analytic forward estimate: "routed" (selected assignments; "implemented" in phase 1), "executed" (incl. `bmm` padding) and "ideal" ([ARCHITECTURE.md §4](../01-architecture/ARCHITECTURE.md#4-flop-estimate-forward-per-token-multiply-add--2-flops)) |
 | profiled FLOP/token | `torch.profiler` matmul FLOPs of one forward (batch 32), per dispatch path |
 | latency | full-sequence forward, CUDA-synchronised, 10 warm-up + 50 repeats, median and p95, batch 1 and 32, **with diagnostics on and off**, all 3 seeds; **not generated tokens/s** |
 | host syncs | synchronisations per forward from CUDA sync-debug mode (a lower bound) |

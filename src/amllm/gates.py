@@ -260,6 +260,22 @@ F5_SEEDS = (42, 43, 44)
 F5_MODELS = ("amllm_f5", "moe_f5", "dense_f5")
 
 
+def check_long_runs(short: dict, long: dict, models, seed: int = 42) -> None:
+    """The 2x stability runs must be the 1x runs with twice the steps: same training code, data split and model
+    configuration; otherwise no stability statement is made."""
+    problems = []
+    for m in models:
+        a, b = short[m][seed], long[m][seed]
+        ca, cb = a["_config"], b["_config"]
+        for key in ("train_code_sha256", "data_split_id", "model"):
+            if ca.get(key) != cb.get(key):
+                problems.append(f"{m}: {key} differs between the 1x and 2x run")
+        if b.get("steps") != 2 * a.get("steps", -1):
+            problems.append(f"{m}: 2x run has {b.get('steps')} steps, 1x has {a.get('steps')}")
+    if problems:
+        raise GateError("; ".join(problems))
+
+
 def f5() -> dict:
     """F5 gate (preregistration F5, addenda and the audit amendment of 2026-10-21, all fixed before any F5 checkpoint
     was evaluated).
@@ -267,7 +283,7 @@ def f5() -> dict:
     S: B2 latency (batch 8 x 512, median over seeds) <= 1.10 x moe_f5 AND executed expert rows/token on that path
        <= moe_f5's (seed mean); AM-LLM's executed vs. hard-routed rows are reported (extra work of static execution).
     C: syntax measure (valid continuation share) >= moe_f5 - 5 points (seed mean) AND pass@1 >= moe_f5's AND pass@1 is
-       informative (not 0 for every model); a floor makes C "not informative" = not met.
+       informative (> 0 for AM-LLM or moe_f5; Dense does not count); otherwise C is "not informative" = not met.
     met = Q and (S or C); partial = Q only; not met = not Q. The 2x run (seed 42) marks the verdict unstable if the
     loss ratio crosses 1.0 (the ranking reverses) or crosses the 1.02 threshold."""
     runs = load("F5")
@@ -293,12 +309,15 @@ def f5() -> dict:
     s_work = rows["amllm_f5"] <= rows["moe_f5"]
     syn = {m: mean(lambda r: r["syntax"]["valid_continuation_share"], m) for m in F5_MODELS}
     p1 = {m: mean(lambda r: r["tasks"]["pass_at_1"], m) for m in F5_MODELS}
-    informative = any(v > 0 for v in p1.values())
+    # informative only if AM-LLM or the MoE solves something: Dense's successes do not make a 0 vs. 0 comparison
+    # informative (second audit, 2026-10-21)
+    informative = p1["amllm_f5"] > 0 or p1["moe_f5"] > 0
     c_met = informative and syn["amllm_f5"] >= syn["moe_f5"] - 0.05 and p1["amllm_f5"] >= p1["moe_f5"]
     verdict = "met" if q and ((s_lat and s_work) or c_met) else "partial" if q else "not met"
     long = load("F5_2x")
     stability = None
     if all(42 in long.get(m, {}) for m in ("amllm_f5", "moe_f5")):
+        check_long_runs(runs, long, ("amllm_f5", "moe_f5"))
         r1 = ratios[42]
         r2 = default_eval(long["amllm_f5"][42])["val_loss"] / default_eval(long["moe_f5"][42])["val_loss"]
         stability = {"ratio_1x_seed42": r1, "ratio_2x_seed42": r2,
@@ -329,17 +348,21 @@ def f5() -> dict:
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("stage", choices=["f1a", *STAGES, "f2", "f3", "f4", "f5"])
+    p.add_argument("--out", type=Path, default=PHASE2 / "gates.json",
+                   help="gate results file (default: the versioned results/phase2/gates.json; automated runs write elsewhere)")
     a = p.parse_args()
     try:
         result = (f1a() if a.stage == "f1a" else f2() if a.stage == "f2" else f3() if a.stage == "f3"
                   else f4() if a.stage == "f4" else f5() if a.stage == "f5" else quality_compute_gate(a.stage))
     except GateError as e:
         result = {"verdict": "invalid: no gate decision", "reason": str(e)}
-    gates_file = PHASE2 / "gates.json"
+    gates_file = a.out
     gates = json.loads(gates_file.read_text()) if gates_file.exists() else {}
     gates[a.stage.upper()] = result
     gates_file.write_text(json.dumps(gates, indent=2))
     print(json.dumps(result, indent=2)[:4000])
+    if result["verdict"].startswith("invalid"):  # no decision is a failure for callers (exit status 3)
+        raise SystemExit(3)
 
 
 if __name__ == "__main__":

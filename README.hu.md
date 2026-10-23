@@ -36,8 +36,8 @@ data/        csak egy apró mintafájl; a korpuszok helyben épülnek újra (dat
 results/     előzetes összesítő tábla (results/README.hu.md)
 ```
 
-Dokumentáció: [docs/ARCHITECTURE.hu.md](docs/ARCHITECTURE.hu.md) · [docs/METHODOLOGY.hu.md](docs/METHODOLOGY.hu.md) ·
-[docs/adr/](docs/adr/README.hu.md)
+Dokumentáció: [kutatási célok (A–D)](docs/00-goals/RESEARCH_GOALS.hu.md) · [docs/01-architecture/ARCHITECTURE.hu.md](docs/01-architecture/ARCHITECTURE.hu.md) · [docs/02-methodology/METHODOLOGY.hu.md](docs/02-methodology/METHODOLOGY.hu.md) ·
+[docs/04-decisions/](docs/04-decisions/README.hu.md)
 
 ## Gyors indítás
 

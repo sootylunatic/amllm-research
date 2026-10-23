@@ -1,9 +1,25 @@
+---
+title: "AM-LLM — architecture and implementation (v0.2.1)"
+version: "v0.2.1"
+created: "2026-10-21"
+updated: "2026-10-23"
+status: "HISTORICAL"
+scope: "VERSION"
+source_of_truth: true
+supersedes: []
+superseded_by: []
+---
+
 **English** | [Magyar](ARCHITECTURE.hu.md)
+
+> **Document scope (2026-10-23):** this is the exact **historical v0.2.1 implementation**; it is not an automatic specification for later F5 or overnight branches. Current **A–B–C–D research objectives**: [../00-goals/RESEARCH_GOALS.md](../00-goals/RESEARCH_GOALS.md). Actual active-compute savings (A), real inference memory (B), decode speed (C), and larger-model skill (D) require distinct evidence. The technical description below is preserved.
+
 
 # AM-LLM — architecture and implementation (v0.2.1)
 
+
 This document describes the code in `src/amllm/` exactly. The rationale for each decision is in the ADRs
-([`adr/`](adr/README.md)); the measurement protocol is in [METHODOLOGY.md](METHODOLOGY.md).
+([`adr/`](../04-decisions/README.md)); the measurement protocol is in [../02-methodology/METHODOLOGY.md](../02-methodology/METHODOLOGY.md).
 
 ## 1. Overview
 

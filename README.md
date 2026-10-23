@@ -35,8 +35,8 @@ data/        a tiny toy file only; corpora are rebuilt locally (data/README.md)
 results/     preliminary summary table (results/README.md)
 ```
 
-Documentation: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/METHODOLOGY.md](docs/METHODOLOGY.md) ·
-[docs/adr/](docs/adr/README.md)
+Documentation: [research goals (A–D)](docs/00-goals/RESEARCH_GOALS.md) · [docs/01-architecture/ARCHITECTURE.md](docs/01-architecture/ARCHITECTURE.md) · [docs/02-methodology/METHODOLOGY.md](docs/02-methodology/METHODOLOGY.md) ·
+[docs/04-decisions/](docs/04-decisions/README.md)
 
 ## Quick start
 

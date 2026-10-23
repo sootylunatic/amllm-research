@@ -1,9 +1,25 @@
+---
+title: "AM-LLM — architektúra és implementáció (v0.2.1)"
+version: "v0.2.1"
+created: "2026-10-21"
+updated: "2026-10-23"
+status: "HISTORICAL"
+scope: "VERSION"
+source_of_truth: true
+supersedes: []
+superseded_by: []
+---
+
 [English](ARCHITECTURE.md) | **Magyar**
+
+> **Dokumentumhatókör (2026-10-23):** ez a **v0.2.1 történeti kódállapotának pontos leírása**. Nem a későbbi F5 vagy éjszakai variánsok automatikus specifikációja. A projekt aktuális **A–B–C–D céljai**: [../00-goals/RESEARCH_GOALS.hu.md](../00-goals/RESEARCH_GOALS.hu.md). Az eredeti A kérdésben a tényleges aktív számítás megtakarítása a fő bizonyíték; a memória (B), generálás (C) és nagy modellképesség (D) **külön** vizsgálandó. Az alábbi architektúramegállapításokat ettől nem módosítottuk.
+
 
 # AM-LLM — architektúra és implementáció (v0.2.1)
 
+
 Ez a dokumentum a `src/amllm/` kód pontos leírása. A döntések indoklása az ADR-ekben van
-([`adr/`](adr/README.hu.md)); a mérési protokoll a [METHODOLOGY.hu.md](METHODOLOGY.hu.md)-ben.
+([`adr/`](../04-decisions/README.hu.md)); a mérési protokoll a [../02-methodology/METHODOLOGY.hu.md](../02-methodology/METHODOLOGY.hu.md)-ben.
 
 ## 1. Áttekintés
 

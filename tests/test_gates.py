@@ -73,8 +73,10 @@ def write_f5(root, loss, lat, rows, syn, p1, long=None, hard_rows=10.0):
                 d = root / exp / f"{m}_s{s}"
                 d.mkdir(parents=True)
                 mode = "hard_surv_0.5" if m.startswith("amllm") else "fixed"
-                (d / "report.json").write_text(json.dumps({"eval": {mode: {"val_loss": value}}}))
-                (d / "config.json").write_text(json.dumps({"train_code_sha256": "c", "data_split_id": "s"}))
+                (d / "report.json").write_text(json.dumps({"eval": {mode: {"val_loss": value}},
+                                                          "steps": 9000 if exp == "F5" else 18000}))
+                (d / "config.json").write_text(json.dumps({"train_code_sha256": "c", "data_split_id": "s",
+                                                          "model": {"arch": m}}))
                 if exp == "F5":
                     ev["runs"][f"F5/{m}_s{s}"] = {
                         "b2_latency_b8_t512": {"median_ms": lat[m], "expert_rows_per_token_executed": rows[m],
@@ -114,3 +116,37 @@ def test_f5_stability_detects_ranking_reversal_below_threshold(tmp_path, monkeyp
              long={"amllm_f5": 1.01, "moe_f5": 1.0})
     r = gates.f5()
     assert r["verdict"] == "met (unstable)" and r["stability_2x"]["ranking_reversed"]
+
+
+def test_f5_dense_success_does_not_make_c_informative(tmp_path, monkeypatch):
+    """Second audit: AM-LLM 0%, MoE 0%, Dense 10% pass@1 must not count as an informative coding comparison."""
+    monkeypatch.setattr(gates, "PHASE2", tmp_path)
+    write_f5(tmp_path, **{**F5_OK, "lat": {"amllm_f5": 2.0, "moe_f5": 1.0, "dense_f5": 0.5},
+                          "p1": {"amllm_f5": 0.0, "moe_f5": 0.0, "dense_f5": 0.1}},
+             long={"amllm_f5": 1.0, "moe_f5": 1.0})
+    r = gates.f5()
+    assert r["C"]["informative"] is False and r["C"]["met"] is False and r["verdict"] == "partial"
+
+
+@pytest.mark.parametrize("field, value", [("train_code_sha256", "other"), ("data_split_id", "other"),
+                                          ("model", {"arch": "x"}), ("steps", 9000)])
+def test_f5_2x_runs_must_be_comparable(tmp_path, monkeypatch, field, value):
+    """Review: a 2x run with other code, split, model or step count must not yield a stability statement."""
+    monkeypatch.setattr(gates, "PHASE2", tmp_path)
+    write_f5(tmp_path, **F5_OK, long={"amllm_f5": 1.0, "moe_f5": 1.0})
+    d = tmp_path / "F5_2x" / "moe_f5_s42"
+    target = d / ("report.json" if field == "steps" else "config.json")
+    data = json.loads(target.read_text())
+    data[field] = value
+    target.write_text(json.dumps(data))
+    with pytest.raises(gates.GateError):
+        gates.f5()
+
+
+def test_invalid_gate_exits_non_zero(tmp_path, monkeypatch):
+    """Review: an invalid gate (no decision) must not look like success to a caller."""
+    monkeypatch.setattr(gates, "PHASE2", tmp_path)
+    monkeypatch.setattr("sys.argv", ["gates", "f5"])
+    with pytest.raises(SystemExit) as e:
+        gates.main()
+    assert e.value.code == 3 and "invalid" in json.loads((tmp_path / "gates.json").read_text())["F5"]["verdict"]

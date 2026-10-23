@@ -1,13 +1,39 @@
+---
+title: "AM-LLM — kísérleti módszertan és reprodukálás"
+created: "2026-10-21"
+updated: "2026-10-23"
+status: "ACTIVE"
+scope: "PROJECT"
+source_of_truth: true
+supersedes: []
+superseded_by: []
+---
+
 [English](METHODOLOGY.md) | **Magyar**
+
+> **Protokollhatókör (2026-10-23):** az alábbi szöveg **E00–E09 történeti, byte-tokenes módszertana**. Az „audit alatt” megfogalmazás az akkori állapotot jelzi; az E09-jelentés azóta elkészült. Az E07 / F5 eredeti kapui **változatlanok**. Aktuális kutatási A–D célok: [../00-goals/RESEARCH_GOALS.hu.md](../00-goals/RESEARCH_GOALS.hu.md). Az F5 BPE és az éjszakai 36 futás eredményeit nem az alábbi byte-protokoll szabályai szerint kell visszamenőleg megítélni; külön preregisztrációk és riportok érvényesek.
+
+## Aktuális A–D kiterjesztés — új kísérletekre, nem visszamenőleg
+
+| Cél | Elsődleges bizonyíték | Gyakori téves helyettesítő |
+|---|---|---|
+| A | loss / pass@1 **végrehajtott** FLOP és tényleges kihagyott attention/FFN mellett, matched Dense/MoE | ideális FLOP, átlag hop |
+| B | inference peak VRAM, rezidens súlyok, KV+scratch, hit/miss és PCIe bájt/token | training VRAM, cache-szimuláció |
+| C | valós prefill/decode tok/s, TTFT, p50/p95, batch és kontextus, azonos backend/hardver | train tok/s, teljes-forward ms |
+| D | független, szivárgásmentes kódolási/hibakeresési feladatok és nagy modellkontrollok | kis modell val loss önmagában |
+
+**Érvényes új protokoll:** külön train/val/test, új holdout, mivel az éjszakai tervező test-veszteségeket is láthatott; modell- és tokenizer-verzióhű összehasonlítás; több seed és előre rögzített döntési kapuk; sikertelen eredmények megtartása. A konkrét 2026-10-22/23 jelentés: NIGHT_RESEARCH_REPORT_HU.md.
+
 
 # AM-LLM — kísérleti módszertan és reprodukálás
 
-Kapcsolódó döntések: [ADR-0007](adr/0007-corpus-and-split.hu.md) (adat), [ADR-0008](adr/0008-control-models.hu.md)
-(kontrollok), [ADR-0009](adr/0009-measurement-protocol.hu.md) (mérés), [ADR-0014](adr/0014-deterministic-combine-and-diagnostics.hu.md)
-(determinisztikusság, diagnosztika nélküli késleltetés). Modellrészletek: [ARCHITECTURE.hu.md](ARCHITECTURE.hu.md).
+
+Kapcsolódó döntések: [ADR-0007](../04-decisions/0007-corpus-and-split.hu.md) (adat), [ADR-0008](../04-decisions/0008-control-models.hu.md)
+(kontrollok), [ADR-0009](../04-decisions/0009-measurement-protocol.hu.md) (mérés), [ADR-0014](../04-decisions/0014-deterministic-combine-and-diagnostics.hu.md)
+(determinisztikusság, diagnosztika nélküli késleltetés). Modellrészletek: [../01-architecture/ARCHITECTURE.hu.md](../01-architecture/ARCHITECTURE.hu.md).
 
 > **Állapot: előzetes — audit alatt.** Az első kísérletsorozatot egy külső audit átnézte; mérési és tulajdonítási
-> hibákat talált, ezek újramérése folyamatban van (E09 szakasz). A [`results/summary.csv`](../results/README.hu.md)-ben
+> hibákat talált, ezek újramérése folyamatban van (E09 szakasz). A [`results/summary.csv`](../../results/README.hu.md)-ben
 > közölt eredmények előzetesek.
 
 ## 1. Szakaszok
@@ -53,7 +79,7 @@ Kapcsolódó döntések: [ADR-0007](adr/0007-corpus-and-split.hu.md) (adat), [AD
 |---|---|
 | val/test loss | átlagos keresztentrópia nat/bájtban; `bpb = loss / ln 2`; perplexity = `exp(loss)` (bájtonként) |
 | átlagos hop | végrehajtott modulbank-hívások tokenenként (Dense/MoE: rétegszám) |
-| becsült FLOP/token | analitikus forward-becslés: „routolt” (kiválasztott hozzárendelések; az 1. fázisban „implementált”), „végrehajtott” (a `bmm` paddingjével) és „ideális” ([ARCHITECTURE.hu.md 4. pont](ARCHITECTURE.hu.md#4-flop-becslés-forward-tokenenként-szorzás-összeadás--2-flop)) |
+| becsült FLOP/token | analitikus forward-becslés: „routolt” (kiválasztott hozzárendelések; az 1. fázisban „implementált”), „végrehajtott” (a `bmm` paddingjével) és „ideális” ([ARCHITECTURE.hu.md 4. pont](../01-architecture/ARCHITECTURE.hu.md#4-flop-becslés-forward-tokenenként-szorzás-összeadás--2-flop)) |
 | profilozott FLOP/token | `torch.profiler` matmul-FLOP egy forwardon (batch 32), dispatch-utanként |
 | késleltetés | teljes szekvenciás forward, CUDA-szinkronnal, 10 warmup + 50 ismétlés, medián és p95, batch 1 és 32, **diagnosztikával és anélkül**, mindhárom seeden; **nem generált token/s** |
 | host-szinkronok | szinkronizációk forwardonként a CUDA sync-debug módból (alsó becslés) |
