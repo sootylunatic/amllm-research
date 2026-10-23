@@ -53,7 +53,7 @@ The main goal is split into four claims that are proven separately, because a go
 | **C** Generation speed | Real autoregressive decode at least MoE-like, later better? | Measured prefill/decode tokens/s, TTFT, latency percentiles, same GPU and backend as the MoE control | Training tokens/s; full-sequence forward time | **Not shown**; first measurement: AM-LLM 632 vs MoE 884 tok/s at batch 1 |
 | **D** Capability | Useful coding and problem-solving ability of a much larger model on consumer hardware, with A, B and C together? | Independent, leakage-free coding benchmarks against much larger models | A low loss at 17M extrapolated to 27B or 200B | **Long-term ambition, not tested** |
 
-The goals are ordered by dependency: B, C and D only matter if A holds. [How results are judged](docs/00-goals/RESEARCH_GOALS.md) · [Evidence status](docs/RESEARCH_STATUS.md).
+How they relate (as in the canonical goal document): **A is the original scientific *why*; B and C are two independent engineering proofs of feasibility; D is the final *what for* and needs A, B and C together.** No goal substitutes for another's measurement. [How results are judged](docs/00-goals/RESEARCH_GOALS.md) · [Evidence status](docs/RESEARCH_STATUS.md).
 
 ## The research programme at a glance
 

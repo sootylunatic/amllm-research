@@ -53,7 +53,7 @@ A fő célt négy külön bizonyítandó állításra bontjuk, mert az egyik jó
 | **C** Generálási sebesség | Valós autoregresszív dekódolás legalább MoE-közeli, később jobb? | Mért prefill/decode token/s, TTFT, késleltetési percentilisek, a MoE-kontrollal azonos GPU-n és backenden | A tanítási token/s; a teljes szekvenciás forward ideje | **Nem igazolt**; első mérés: AM-LLM 632 vs MoE 884 tok/s, batch 1 |
 | **D** Képesség | Egy sokkal nagyobb modell hasznos kódolási és problémamegoldó képessége fogyasztói hardveren, az A, B és C együttes teljesítésével? | Független, szivárgásmentes kódolási tesztek sokkal nagyobb modellekkel szemben | A 17M-es alacsony loss extrapolálása 27B-re vagy 200B-re | **Hosszú távú cél, nem tesztelt** |
 
-A célok függőségi sorrendben állnak: a B, C és D csak akkor számít, ha az A teljesül. [Az eredmények megítélése](docs/00-goals/RESEARCH_GOALS.hu.md) · [bizonyítékok állapota](docs/RESEARCH_STATUS.hu.md).
+Így viszonyulnak egymáshoz (a kanonikus céldokumentum szerint): **az A az eredeti tudományos *miért*; a B és a C a megvalósíthatóság két, egymástól független mérnöki bizonyítéka; a D a végső *mire* akarjuk használni, és az A, B és C együttes teljesítését igényli.** Egyik cél sem helyettesíti a másik mérését. [Az eredmények megítélése](docs/00-goals/RESEARCH_GOALS.hu.md) · [bizonyítékok állapota](docs/RESEARCH_STATUS.hu.md).
 
 ## A kutatási program áttekintése
 
