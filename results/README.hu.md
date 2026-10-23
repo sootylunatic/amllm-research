@@ -1,14 +1,15 @@
 [English](README.md) | **Magyar**
 
-# Eredmények (előzetes — audit alatt)
+# Eredmények (első sorozat, auditált)
 
 A `summary.csv` futásonként és kiértékelési módonként egy sort tartalmaz. Ez az egyetlen publikált eredmény:
 a futásnaplók, a checkpointok és a részletes jelentés a privát fejlesztési archívumban maradnak.
 
 **A számok használata előtt:**
 
-- A tábla **előzetes**. Az első sorozat külső auditja mérési és tulajdonítási hibákat talált; a javítások újramérése
-  folyamatban van.
+- A tábla **csak az első sorozatot (E00–E09)** tartalmazza. Az audit mérési és tulajdonítási hibákat talált; a javítások
+  és az újramérések benne vannak. Az előre rögzített go/no-go kapu nem teljesült, a későbbi feltáró eredmények
+  (F1–F5, éjszakai kör) nem részei a táblának.
 - Modelleket **csak azonos `experiment`-en belül** hasonlíts — így azonos `code_version` mellett — és azonos
   `eval_mode`-dal. Az E07 és az E09 eltérő kódverzióval futott; az E09 a saját referenciáit újratanítja.
 - A nem üres `validity_note`-tal jelölt sorok nem azt mérik, amit a preset neve sugall. Például Top-1 routing

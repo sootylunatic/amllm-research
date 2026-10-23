@@ -4,7 +4,7 @@
 
 Sablon: [0000-template.hu.md](0000-template.hu.md). Elfogadott rekordot nem írunk át; a változást új rekord rögzíti, a ténybeli
 hibát dátumozott *Javítás* bejegyzés. Csak a technikai rekordok nyilvánosak; a hiányzó sorszámok belső projektrekordok. Az ezekre, a `NEXT_EXPERIMENTS` pontjaira és az előregisztrációs fájlokra tett említések belső dokumentumokra utalnak.
-A rekordokban idézett mért értékek **előzetesek (audit alatt)**.
+A rekordokban idézett mért értékek az első sorozat értékei az adott döntés idején; az olvasásukhoz lásd: `results/README.hu.md`.
 
 | # | Döntés | Státusz |
 |---|---|---|

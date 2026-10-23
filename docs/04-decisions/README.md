@@ -5,7 +5,7 @@
 Template: [0000-template.md](0000-template.md). Accepted records are not rewritten; changes get a new record, and factual
 errors get a dated *Correction* note. Only technical records are published; missing numbers are project-internal
 records. Mentions of those records, of `NEXT_EXPERIMENTS` items and of pre-registration files refer to internal documents.
-Measured values quoted in the records are **preliminary (under audit)**.
+Measured values quoted in the records are those of the first series at the time of each decision; see `results/README.md` for how to read them.
 
 | # | Decision | Status |
 |---|---|---|

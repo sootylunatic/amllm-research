@@ -3,15 +3,18 @@
 # AM-LLM — Adaptive Modular Language Model (kutatási prototípus)
 
 [![tests](https://github.com/sootylunatic/amllm-research/actions/workflows/tests.yml/badge.svg)](https://github.com/sootylunatic/amllm-research/actions/workflows/tests.yml)
-![status](https://img.shields.io/badge/results-preliminary%20%E2%80%94%20under%20audit-orange)
+![status](https://img.shields.io/badge/status-research%20prototype%20%E2%80%94%20main%20hypothesis%20not%20yet%20supported-orange)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
 Kis, tanulmányi jellegű kutatási prototípus. A modellek apró, bájtszintű nyelvi modellek, egyetlen fogyasztói GPU-n
 tanítva. Ez nem termék, és semmilyen állítást nem tesz nagy modellek teljesítményéről.
 
-> **Előzetes eredmények — audit alatt.** Az első kísérletsorozatot egy külső audit átnézte, és mérési, valamint
-> tulajdonítási hibákat talált. Ezek javítása és újramérése folyamatban van. Addig a
-> [`results/summary.csv`](results/README.hu.md) előzetes, és nem idézhető megállapításként.
+> **Állapot (2026-10-23).** Az első kísérletsorozatot (E00–E09) auditálták és javították; az előre rögzített go/no-go
+> kapuja **nem** teljesült. A későbbi fázisok (F1–F5 és egy éjszakai kör ~17M paraméteres modelleken) feltáró jellegűek.
+> Eddig ezen a skálán **nem** támasztják alá a hatékonysági hipotézist: a legjobb változatok MoE-közeli minőséget
+> érnek el, de több számítással, miközben a tanult routing valóban jobb a véletlennél. A célok és az eredmények
+> megítélésének szabályai: [docs/00-goals/RESEARCH_GOALS.hu.md](docs/00-goals/RESEARCH_GOALS.hu.md).
+> A [`results/summary.csv`](results/README.hu.md) csak az első sorozatot tartalmazza; a későbbi eredmények itt még nincsenek közzétéve.
 
 ## Kutatási kérdés
 

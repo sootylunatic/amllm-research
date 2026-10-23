@@ -3,15 +3,18 @@
 # AM-LLM — Adaptive Modular Language Model (research prototype)
 
 [![tests](https://github.com/sootylunatic/amllm-research/actions/workflows/tests.yml/badge.svg)](https://github.com/sootylunatic/amllm-research/actions/workflows/tests.yml)
-![status](https://img.shields.io/badge/results-preliminary%20%E2%80%94%20under%20audit-orange)
+![status](https://img.shields.io/badge/status-research%20prototype%20%E2%80%94%20main%20hypothesis%20not%20yet%20supported-orange)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
 A small, study-oriented research prototype. The models are tiny byte-level language models trained on a single
 consumer GPU. This is not a product, and nothing here makes a claim about large-model performance.
 
-> **Preliminary results — under audit.** The first experiment series has been reviewed by an external audit,
-> which found measurement and attribution issues. These are being corrected and re-measured. Until that is
-> finished, [`results/summary.csv`](results/README.md) is preliminary and should not be cited as a finding.
+> **Status (2026-10-23).** The first experiment series (E00–E09) was audited and corrected; its pre-registered
+> go/no-go gate was **not** met. The later phases (F1–F5 and an overnight round on ~17M-parameter models) are
+> exploratory. So far they do **not** support the efficiency hypothesis at this scale: the best variants reach
+> MoE-close quality but need more compute, while learned routing does beat random routing. The goals and how results
+> are judged are in [docs/00-goals/RESEARCH_GOALS.md](docs/00-goals/RESEARCH_GOALS.md).
+> [`results/summary.csv`](results/README.md) covers the first series only; later results are not published here yet.
 
 ## Research question
 

@@ -1,14 +1,15 @@
 **English** | [Magyar](README.hu.md)
 
-# Results (preliminary — under audit)
+# Results (first series, audited)
 
 `summary.csv` holds one row per run and evaluation mode. It is the only published result artefact: run logs,
 checkpoints and the detailed report are kept in the private development archive.
 
 **Read before using the numbers:**
 
-- The table is **preliminary**. An external audit of the first series found measurement and attribution issues;
-  corrections are being re-measured.
+- The table covers the **first series (E00–E09) only**. An audit of that series found measurement and attribution
+  issues; the corrections and re-measurements are included. Its pre-registered go/no-go gate was not met, and later
+  exploratory results (F1–F5, overnight round) are not part of this table.
 - Compare models **only within the same `experiment`** — and therefore the same `code_version` — and the same
   `eval_mode`. E07 and E09 used different code versions; E09 retrains its own references.
 - Rows with a non-empty `validity_note` do not measure what their preset name suggests. Example: top-1 routing with
