@@ -135,11 +135,16 @@ def active_params(cfg: ModelConfig, model, val, device) -> dict:
     _, info = model(x, trace=True)
     n_tok = x.numel()
     if cfg.arch == "moe":
-        per_layer = s["attn"] + 2 * s["norm"] + s["router_e"] + cfg.moe_topk * s["expert"]
+        # experts per token and layer: moe_topk, or with adaptive K (expert_topp) the mean of the routes really dispatched
+        k = float(info["expert_counts"].sum()) / (cfg.n_layers * n_tok) if cfg.expert_topp > 0 else cfg.moe_topk
+        per_layer = s["attn"] + 2 * s["norm"] + s["router_e"] + k * s["expert"]
         n = cfg.n_layers * per_layer + s["head"] + s["norm"]
         return {"unique_active_params_per_token": n, "param_applications_per_token": n,
                 "param_applications_per_token_ideal": n}
-    # amllm: union of experts/modules over hops, per token
+    # amllm: union of experts/modules over hops, per token. The union below assumes one shared bank and shared or
+    # per-hop attention; the FD01/FD03/FD04 variants would get wrong unique-weight counts, so they are refused
+    if (cfg.bank_groups, cfg.bank_norm, cfg.attn_every, cfg.attn_groups, cfg.attn_adapter_rank, cfg.expert_topp) != (1, "shared", 1, 1, 0, 0.0):
+        raise ValueError("active_params supports the default bank and attention layout only")
     experts = [set() for _ in range(n_tok)]
     modules = [set() for _ in range(n_tok)]
     for hop in info["trace"]:

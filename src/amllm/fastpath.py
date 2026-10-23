@@ -23,10 +23,15 @@ BUCKETS = (0.25, 0.5, 0.75, 1.0)
 
 
 def require_default_bank(model) -> None:
-    """The execution paths below implement one shared bank and one shared bank norm (FD01/FD03 switches off)."""
+    """The execution paths below implement one shared bank, one shared bank norm and attention on every hop
+    (FD01/FD03/FD04 switches off)."""
     cfg = model.cfg
     if cfg.bank_groups != 1 or cfg.bank_norm != "shared":
         raise ValueError("fast/static/KV-cache execution supports bank_groups=1 and bank_norm='shared' only")
+    if cfg.expert_topp > 0:
+        raise ValueError("fast/static/KV-cache execution supports a fixed expert_topk only (expert_topp=0)")
+    if (cfg.attn_every, cfg.attn_groups, cfg.attn_adapter_rank) != (1, 1, 0):
+        raise ValueError("fast/static/KV-cache execution supports attn_every=1, attn_groups=1, attn_adapter_rank=0 only")
 
 
 def bucket_size(n_active: int, context: int, buckets=BUCKETS) -> int:

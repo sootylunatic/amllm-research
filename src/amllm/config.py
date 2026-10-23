@@ -48,6 +48,22 @@ class ModelConfig:
     # AD02a: weight of the anytime (multi-exit) loss. 0 = off. > 0: in training the state after every hop except the last
     # is read out through the final norm and the shared head and trained on the next token; loss += weight * mean over hops
     anytime_weight: float = 0.0
+    # FD04 (all need attn_per_hop and unshared_attention=False; parts are created last, so defaults are unchanged):
+    # attn_every = attention runs only on hops 0, k, 2k, ... (k = 2: every second hop is expert-only);
+    # attn_groups = number of distinct attention weight sets over the attention hops; attention hop j of n_att uses set
+    #               j * attn_groups // n_att (1 = one shared attention, n_att = a separate attention per attention hop);
+    # attn_adapter_rank = a per-hop low-rank residual adapter on the attention output of hops > 0 (0 = off; the up
+    #               projection starts at zero, so the model starts as the shared-attention model)
+    attn_every: int = 1
+    attn_groups: int = 1
+    attn_adapter_rank: int = 0
+    # AD03 adaptive K: per token keep only the leading experts (of expert_topk) until their router probability mass
+    # reaches expert_topp; 0 = off (every token always uses expert_topk experts)
+    expert_topp: float = 0.0
+
+    @property
+    def attention_hops(self) -> int:
+        return -(-self.n_hops // self.attn_every)
 
     def __post_init__(self):
         assert self.arch in ARCHS, self.arch
@@ -57,6 +73,11 @@ class ModelConfig:
         assert self.anytime_weight >= 0.0, self.anytime_weight
         assert self.bank_norm in ("shared", "per_hop", "hop_affine"), self.bank_norm
         assert 1 <= self.bank_groups <= self.n_hops, (self.bank_groups, self.n_hops)
+        assert 0.0 <= self.expert_topp <= 1.0 and not (self.expert_topp > 0 and self.router_mode == "random")
+        assert 1 <= self.attn_every <= self.n_hops and self.attn_adapter_rank >= 0
+        assert 1 <= self.attn_groups <= self.attention_hops, (self.attn_groups, self.attention_hops)
+        if (self.attn_every, self.attn_groups, self.attn_adapter_rank) != (1, 1, 0):
+            assert self.attn_per_hop and not self.unshared_attention, "FD04 switches replace unshared_attention"
         assert self.d_model % self.n_heads == 0
         assert 1 <= self.module_topk <= self.n_modules
         assert 1 <= self.expert_topk <= self.experts_per_module

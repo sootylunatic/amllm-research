@@ -1,0 +1,62 @@
+{
+ "checkpoint": "results/round_v3_w1/FD01a/amllm_f5_s44/checkpoint.pt",
+ "bank_groups": 6,
+ "per_bank": [
+  {
+   "experts": 24,
+   "dead": 0,
+   "entropy_bits": 4.5108,
+   "max_entropy_bits": 4.585,
+   "max_share": 0.0648
+  },
+  {
+   "experts": 24,
+   "dead": 0,
+   "entropy_bits": 4.4148,
+   "max_entropy_bits": 4.585,
+   "max_share": 0.0981
+  },
+  {
+   "experts": 24,
+   "dead": 0,
+   "entropy_bits": 4.2948,
+   "max_entropy_bits": 4.585,
+   "max_share": 0.1465
+  },
+  {
+   "experts": 24,
+   "dead": 0,
+   "entropy_bits": 4.0996,
+   "max_entropy_bits": 4.585,
+   "max_share": 0.1375
+  },
+  {
+   "experts": 24,
+   "dead": 0,
+   "entropy_bits": 4.1873,
+   "max_entropy_bits": 4.585,
+   "max_share": 0.139
+  },
+  {
+   "experts": 24,
+   "dead": 0,
+   "entropy_bits": 4.3021,
+   "max_entropy_bits": 4.585,
+   "max_share": 0.0972
+  }
+ ],
+ "all_distinct_experts": {
+  "experts": 144,
+  "dead": 0,
+  "entropy_bits": 6.8865,
+  "max_entropy_bits": 7.1699,
+  "max_share": 0.0244
+ },
+ "merged_like_the_w1_report": {
+  "experts": 24,
+  "dead": 0,
+  "entropy_bits": 4.5612,
+  "max_entropy_bits": 4.585,
+  "max_share": 0.0577
+ }
+}

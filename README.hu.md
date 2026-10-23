@@ -64,7 +64,8 @@ A fő célt négy külön bizonyítandó állításra bontjuk, mert az egyik jó
 | **2. fázis — F1–F4** | bájtszintű | A papíron lévő megtakarításból lehet valódi? | A gradienst kapó Top-1 routing működik; a vödrös kihagyás és a kernelmunka (Triton, CUDA Graph, KV-cache dekódolás) részleges eredményt adott, általános dekódolási nyereség nincs. |
 | **F5** (feltáró) | ~17M, 8 192 BPE | Megmaradnak a hatások nagyobb modellen és valódi kódon? | A minőségi kapu **nem teljesült**; a tanult halting sokat veszít a minőségből, ha következtetéskor csonkolunk. |
 | **Éjszakai kör** (2026-10-22/23) | ~17M | 12 konfiguráció × 3 seed | A legjobb FixedDepth változatok a MoE veszteségét **24–31%-kal több** becsült FLOP mellett közelítik; nincs olyan változat, amely kevesebb számítással érné el a MoE-t. |
-| **V3 kör** (folyamatban) | ~17M | Miért bukik a halting? A család melyik része segít: az expert-kötés, a hierarchikus routing, a közös normalizálás? | Előregisztrált, kontrollált ablációk futnak; **az eredmények a kör lezárása után kerülnek közzétételre.** |
+| **V3 kör — W0, W1** (lezárva 2026-10-23) | ~17M | Miért bukik a halting? A család melyik része ront: az expert-kötés, a hierarchikus routing, a közös normalizálás, a router tanítási szabálya? | **W1, 48 előregisztrált futás:** a hopok közötti expert-kötés és a hierarchikus routing egyaránt ront (külön bankok −0,020…−0,036 nat, lapos router −0,033 nat a FixedDepth-hez képest); a közös normalizálásnál és a tanítási szabálynál nem mutatható ki hatás (INCONCLUSIVE, nem egyenértékűség). Az anytime (több kilépéses) veszteség rendbe hozza a kemény halting-utat (−0,70…−0,88 nat), de ≥ 1,18× marad a MoE veszteségéhez képest. [W1 riport](results/round_v3_w1/W1_REPORT.hu.md) |
+| **V3 kör — W2** (fut) | ~17M | Attention-megosztás, FLOP-illesztett mélység/Top-K/granularitás pontok illesztett MoE/Dense kontrollal, adaptív K | [Lezárt előregisztráció](results/round_v3_w2/PREREGISTRATION.hu.md) szerint fut; eredmény a kör után. |
 
 A részletes számok, a konfidenciaintervallumok és a korlátok a [kutatási jelentésben](results/RESEARCH_REPORT.hu.md) vannak; az egyes lépések mögötti döntések a [műszaki rekordokban](docs/04-decisions/README.hu.md).
 
@@ -72,8 +73,8 @@ A részletes számok, a konfidenciaintervallumok és a korlátok a [kutatási je
 
 1. **A routing tanulható és használt.** A kis modelleknél a tanult routing ~20%-kal kisebb veszteséget ér el, mint a véletlen routing azonos paraméterszám és számítás mellett.
 2. **A hoponkénti attention számít a legtöbbet** a kis modelleknél; ez nem kapacitás-műtermék.
-3. **~17M-en nincs olyan változat, amely kevesebb végrehajtott FLOP-pal éri el a MoE minőségét.** A hat hopos FixedDepth szerkezetileg *expert-kötött MoE*; a kötés, a kétszintű routing és a közös normalizálás együtt változik, és még nincsenek szétválasztva.
-4. **A jelenlegi tanult halting nem ad használható kompromisszumot:** lágyan tanítjuk (minden hop lefut), keményen alkalmazzuk (a tokenek megállnak), és ez az eltérés sokba kerül. Ez e *mechanizmus* ellen szól, nem az adaptív számítás általában.
+3. **~17M-en nincs olyan változat, amely kevesebb végrehajtott FLOP-pal éri el a MoE minőségét.** A hat hopos FixedDepth szerkezetileg *expert-kötött MoE*; a kötés, a kétszintű routing, a közös normalizálás és a router tanítási szabálya (`straight_through` vs `topk_softmax`) együtt változik; a W1 kör szétválasztotta őket: a kötés és a hierarchikus routing ront, a normalizálásnál és a tanítási szabálynál nem mutatható ki hatás (n = 3 mellett INCONCLUSIVE). A legjobb FixedDepth-változatok (2,122–2,125) elérik a dense kontrollt, a MoE-t (2,119) nem.
+4. **A jelenlegi tanult halting nem ad használható kompromisszumot:** lágyan tanítjuk (minden hop lefut), keményen alkalmazzuk (a tokenek megállnak), és ez az eltérés sokba kerül. Ez e *mechanizmus* ellen szól, nem az adaptív számítás általában. Az anytime (több kilépéses) veszteség nagyrészt rendbe hozza a kemény utat (W1), de a végső minőségből veszít, és alig takarít meg számítást.
 5. **A valós sebességet alig mértük:** egy korai, batch 1-es dekódolási mérésben az AM-LLM 632, a MoE 884 token/s volt.
 
 ## Amit *nem* állítunk

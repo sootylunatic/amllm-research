@@ -172,3 +172,172 @@ def test_anytime_weight_validation_and_training_step(tmp_path):
     rep = run(cfg, TrainConfig(data=str(data), steps=3, batch=2, eval_every=100, eval_windows=4, eval_batch=2, amp=False,
                                run_dir=str(tmp_path / "run")))
     assert torch.isfinite(torch.tensor(rep["train_loss_last"]))
+
+
+def test_separate_banks_keep_separate_usage_statistics():
+    torch.manual_seed(0)
+    cfg = tiny_cfg(n_hops=3, bank_groups=3, halt_rule="none", n_modules=2, experts_per_module=2, module_topk=1, expert_topk=1)
+    model = build_model(cfg).eval()
+    with torch.no_grad():
+        _, info = model(torch.randint(0, 256, (4, 16)), hard_halt=True)
+    assert info["expert_counts"].shape == (3 * 2, 2)           # 12 distinct experts are 12 counters, not 4
+    assert info["module_counts"].shape == (3 * 2,)
+    assert int(info["expert_counts"].sum()) == 3 * 4 * 16 * 1  # every token, hop and route counted exactly once
+    for g in range(3):                                          # each bank counts only its own hop
+        assert int(info["expert_counts"][g * 2:(g + 1) * 2].sum()) == 4 * 16
+
+
+def test_shared_bank_statistics_keep_their_old_shape():
+    model = build_model(tiny_cfg(n_hops=3, halt_rule="none")).eval()
+    with torch.no_grad():
+        _, info = model(torch.randint(0, 256, (2, 8)), hard_halt=True)
+    assert info["expert_counts"].shape == (4, 3) and info["module_counts"].shape == (4,)
+
+
+# --- FD04: attention sharing switches --------------------------------------------------------------------------------
+
+FD04_NEW = ("extra_attentions", "extra_attn_norms", "adapter_down", "adapter_up")
+
+
+def test_fd04_defaults_add_no_state_dict_keys():
+    assert not any(k.startswith(FD04_NEW) for k in build_model(tiny_cfg()).state_dict())
+
+
+def test_attention_group_mapping_and_expert_only_hops():
+    model = build_model(tiny_cfg(n_hops=6, attn_groups=3, halt_rule="none"))
+    x = torch.zeros(1, 4, model.cfg.d_model)
+    calls = []
+    for i, attn in enumerate([model.attention, *model.extra_attentions]):
+        attn.register_forward_hook(lambda *_, i=i: calls.append(i))
+    for hop in range(6):
+        model.attention_at(hop, x)
+    assert calls == [0, 0, 1, 1, 2, 2]
+    every2 = build_model(tiny_cfg(n_hops=6, attn_every=2, attn_groups=3, halt_rule="none"))
+    assert [every2.attention_at(h, x) is None for h in range(6)] == [False, True] * 3
+    assert every2.cfg.attention_hops == 3 and len(every2.extra_attentions) == 2
+
+
+def test_expert_only_hops_count_fewer_attention_applications_and_flops():
+    torch.manual_seed(0)
+    x = torch.randint(0, 256, (2, 9))
+    full = build_model(tiny_cfg(n_hops=4, halt_rule="none")).eval()
+    half = build_model(tiny_cfg(n_hops=4, halt_rule="none", attn_every=2)).eval()
+    with torch.no_grad():
+        i_full, i_half = full(x, hard_halt=True)[1], half(x, hard_halt=True)[1]
+    assert (i_full["attention_applications"], i_half["attention_applications"]) == (4, 2)
+    assert i_half["flops_per_token"] < i_full["flops_per_token"]
+
+
+def test_adapter_starts_as_the_shared_attention_model_and_is_counted():
+    torch.manual_seed(5)
+    shared = build_model(tiny_cfg(halt_rule="none")).eval()
+    adapted = build_model(tiny_cfg(halt_rule="none", attn_adapter_rank=4)).eval()
+    adapted.load_state_dict(shared.state_dict(), strict=False)
+    x = torch.randint(0, 256, (2, 9))
+    with torch.no_grad():
+        (ls, i_s), (la, i_a) = shared(x, hard_halt=True), adapted(x, hard_halt=True)
+    assert torch.allclose(ls, la, atol=1e-6)
+    d, hops = shared.cfg.d_model, shared.cfg.n_hops
+    assert i_a["flops_per_token"] - i_s["flops_per_token"] == pytest.approx((hops - 1) * 4 * d * 4)
+    extra = sum(p.numel() for p in adapted.parameters()) - sum(p.numel() for p in shared.parameters())
+    assert extra == (hops - 1) * 2 * d * 4
+
+
+@pytest.mark.parametrize("kw", [dict(attn_groups=2), dict(attn_adapter_rank=4), dict(attn_every=2, attn_groups=2)])
+def test_fd04_variants_train_and_every_new_part_gets_gradient(kw):
+    torch.manual_seed(3)
+    model = AdaptiveModularLM(tiny_cfg(n_hops=4, halt_rule="none", **kw))
+    x, y = torch.randint(0, 256, (2, 9)), torch.randint(0, 256, (2, 9))
+    logits, info = model(x, hard_halt=False)
+    (torch.nn.functional.cross_entropy(logits.reshape(-1, 256), y.reshape(-1)) + info["aux_loss"]).backward()
+    new = {n: p for n, p in model.named_parameters() if n.startswith(FD04_NEW)}
+    assert new
+    for n, p in new.items():
+        assert p.grad is not None and torch.isfinite(p.grad).all(), n
+    if "attn_adapter_rank" in kw:  # the zero-initialised up projection is what gets the first gradient
+        assert any(p.grad.abs().sum() > 0 for n, p in new.items() if n.startswith("adapter_up"))
+
+
+def test_fd04_causality():
+    torch.manual_seed(2)
+    model = build_model(tiny_cfg(halt_rule="none", n_hops=4, attn_every=2, attn_groups=2, attn_adapter_rank=2)).eval()
+    a = torch.randint(0, 256, (1, 10))
+    b = a.clone()
+    b[0, 7:] = (b[0, 7:] + 5) % 256
+    with torch.no_grad():
+        assert torch.allclose(model(a, hard_halt=True)[0][:, :7], model(b, hard_halt=True)[0][:, :7], atol=1e-5)
+
+
+def test_fd04_validation_and_fast_path_refusal():
+    with pytest.raises(AssertionError):
+        tiny_cfg(n_hops=4, attn_groups=5)
+    with pytest.raises(AssertionError):
+        tiny_cfg(n_hops=4, attn_every=2, attn_groups=3)   # only 2 attention hops
+    with pytest.raises(AssertionError):
+        tiny_cfg(unshared_attention=True, attn_groups=2)  # FD04 replaces unshared_attention
+    with pytest.raises(AssertionError):
+        tiny_cfg(attn_per_hop=False, attn_every=2)
+    from amllm.fastpath import static_hard_forward
+    with pytest.raises(ValueError):
+        static_hard_forward(build_model(tiny_cfg(attn_every=2)).eval(), torch.randint(0, 256, (1, 8)))
+
+
+# --- AD03: adaptive K (expert_topp) ----------------------------------------------------------------------------------
+
+def test_expert_topp_off_keeps_the_state_dict_and_p1_keeps_every_route():
+    torch.manual_seed(4)
+    base = build_model(tiny_cfg(halt_rule="none")).eval()
+    full = build_model(tiny_cfg(halt_rule="none", expert_topp=1.0)).eval()
+    full.load_state_dict(base.state_dict())  # strict: adaptive K adds no parameters
+    x = torch.randint(0, 256, (2, 9))
+    with torch.no_grad():
+        (lb, ib), (lf, i_f) = base(x, hard_halt=True), full(x, hard_halt=True)
+    # p = 1 keeps a route while the mass before it is < 1, i.e. all top-k routes: same output up to summation order
+    assert torch.allclose(lb, lf, atol=1e-5)
+    assert torch.equal(ib["expert_counts"], i_f["expert_counts"]) and ib["flops_per_token"] == i_f["flops_per_token"]
+
+
+@pytest.mark.parametrize("arch", ["amllm", "moe"])
+def test_small_topp_drops_routes_and_flops_follow(arch):
+    torch.manual_seed(6)
+    kw = dict(arch=arch, halt_rule="none")
+    base, low = build_model(tiny_cfg(**kw)).eval(), build_model(tiny_cfg(**kw, expert_topp=1e-6)).eval()
+    low.load_state_dict(base.state_dict())
+    x = torch.randint(0, 256, (2, 9))
+    with torch.no_grad():
+        ib, il = base(x, hard_halt=True)[1], low(x, hard_halt=True)[1]
+    assert int(il["expert_counts"].sum()) * 2 == int(ib["expert_counts"].sum())  # top-2 -> exactly one expert each
+    assert il["flops_per_token"] < ib["flops_per_token"]
+    assert il["flops_per_token_executed"] >= il["flops_per_token"]
+
+
+@pytest.mark.parametrize("weighting", ["topk_softmax", "full_softmax", "straight_through"])
+def test_topp_weights_and_gradients(weighting):
+    from amllm.routing import HierarchicalModuleBank
+    torch.manual_seed(1)
+    bank = HierarchicalModuleBank(16, 2, 1, 4, 3, 8, weighting, expert_topp=0.5)
+    scores = torch.randn(5, 1, 4, requires_grad=True)
+    idx, w, keep = bank._select_topp(scores, 3, 0.5)
+    assert keep[..., 0].all() and (w[~keep] == 0).all()
+    probs = scores.softmax(-1).gather(-1, idx)
+    assert ((probs.cumsum(-1) - probs)[keep] < 0.5).all() and ((probs.cumsum(-1) - probs)[~keep] >= 0.5).all()
+    if weighting != "full_softmax":
+        assert torch.allclose(w.sum(-1), torch.ones(5, 1))
+    w.sum().backward() if weighting != "topk_softmax" else (w * torch.randn_like(w)).sum().backward()
+    assert torch.isfinite(scores.grad).all() and scores.grad.abs().sum() > 0
+
+
+def test_topp_trains_and_is_refused_by_fast_paths_and_random_routing():
+    torch.manual_seed(2)
+    model = AdaptiveModularLM(tiny_cfg(n_hops=3, expert_topp=0.6, route_weighting="straight_through"))
+    x, y = torch.randint(0, 256, (2, 9)), torch.randint(0, 256, (2, 9))
+    logits, info = model(x, hard_halt=False)
+    (torch.nn.functional.cross_entropy(logits.reshape(-1, 256), y.reshape(-1)) + info["aux_loss"]).backward()
+    assert torch.isfinite(model.bank.expert_router_w.grad).all() and model.bank.expert_router_w.grad.abs().sum() > 0
+    with pytest.raises(AssertionError):
+        tiny_cfg(expert_topp=0.5, router_mode="random")
+    with pytest.raises(AssertionError):
+        tiny_cfg(expert_topp=1.5)
+    from amllm.fastpath import static_hard_forward
+    with pytest.raises(ValueError):
+        static_hard_forward(build_model(tiny_cfg(expert_topp=0.5)).eval(), torch.randint(0, 256, (1, 8)))

@@ -12,7 +12,7 @@ Attn_2 → saját expertek 2           Attn_2 → ugyanaz a bank
 Attn_6 → saját expertek 6           Attn_6 → ugyanaz a bank
 ```
 
-Mindkettőben **6 × 591 360** attention-paraméter és összesen **7 096 320** expertparaméter van. A MoE hat rétegében négy-négy expertből két expertet választ; az AM 6 modul × 4 expertet használ, előbb modult, majd expertet választ, és minden hopban újrahasználja a bankot. **Három tényező egyszerre változott:** közös expertek, hierarchikus routing, közös bank-LayerNorm. Egyedi okozati hatásuk **még nincs külön mérve**. A router ~11 550 paramétere a teljes modell ~0,07%-a.
+Mindkettőben **6 × 591 360** attention-paraméter és összesen **7 096 320** expertparaméter van. A MoE hat rétegében négy-négy expertből két expertet választ; az AM 6 modul × 4 expertet használ, előbb modult, majd expertet választ, és minden hopban újrahasználja a bankot. **Négy tényező egyszerre változott:** közös expertek, hierarchikus routing, közös bank-LayerNorm és a router tanítási szabálya (a MoE-kontroll `topk_softmax`-ot, minden AM-LLM-konfiguráció `straight_through`-t használ: azonos előre irányú érték, más gradiens a routerhez). Az előregisztrált W1 kör szétválasztotta őket ([W1 riport](../results/round_v3_w1/W1_REPORT.hu.md)): az expert-kötés és a hierarchikus routing egyaránt ront; a normalizálásnál és a tanítási szabálynál n = 3 mellett nem mutatható ki hatás (INCONCLUSIVE, ami nem egyenértékűség). A router ~11 550 paramétere a teljes modell ~0,07%-a.
 
 | Modell | Mélység | Routing | Becsült MFLOP/token |
 |---|---:|---|---:|
@@ -22,7 +22,7 @@ Mindkettőben **6 × 591 360** attention-paraméter és összesen **7 096 320** 
 | FixedDepth Top-2/Top-2 | 6 hop | 2 × 2 | 29,954 |
 | FixedDepth kisebb expertek | 6 hop | 1 × 2 keskeny | 19,337 |
 
-Közös keret: d_model=384, 6 attention fej, 8192 BPE-token, 512-es kontextus, hoponként külön attention, SiLU és straight-through routing. A kimeneti fej **~6,291 MFLOP/token (~28%)**, amit a halting nem spórol meg. A becsült FLOP **nem mért generálási sebesség**.
+Közös keret: d_model=384, 6 attention fej, 8192 BPE-token, 512-es kontextus, hoponként külön attention, SiLU expertek; az AM-LLM-konfigurációk straight-through routersúlyozást, a MoE-kontroll az alapértelmezett `topk_softmax`-ot használja. A kimeneti fej **~6,291 MFLOP/token (~28%)**, amit a halting nem spórol meg. A becsült FLOP **nem mért generálási sebesség**.
 
 ## A halting problémája
 

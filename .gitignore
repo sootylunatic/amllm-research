@@ -18,6 +18,10 @@ results/*
 !results/summary.csv
 !results/RESEARCH_REPORT.md
 !results/RESEARCH_REPORT.hu.md
+# round V3: only the allowlisted reports, preregistrations, summaries and analysis outputs are exported here
+!results/round_v3_w0/
+!results/round_v3_w1/
+!results/round_v3_w2/
 
 # marker written by tools/export_public.py
 .amllm-public-export

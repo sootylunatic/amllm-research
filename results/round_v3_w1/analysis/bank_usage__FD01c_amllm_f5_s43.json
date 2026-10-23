@@ -1,0 +1,41 @@
+{
+ "checkpoint": "results/round_v3_w1/FD01c/amllm_f5_s43/checkpoint.pt",
+ "bank_groups": 3,
+ "per_bank": [
+  {
+   "experts": 24,
+   "dead": 0,
+   "entropy_bits": 4.4559,
+   "max_entropy_bits": 4.585,
+   "max_share": 0.0776
+  },
+  {
+   "experts": 24,
+   "dead": 0,
+   "entropy_bits": 4.2864,
+   "max_entropy_bits": 4.585,
+   "max_share": 0.0919
+  },
+  {
+   "experts": 24,
+   "dead": 0,
+   "entropy_bits": 4.4069,
+   "max_entropy_bits": 4.585,
+   "max_share": 0.073
+  }
+ ],
+ "all_distinct_experts": {
+  "experts": 72,
+  "dead": 0,
+  "entropy_bits": 5.968,
+  "max_entropy_bits": 6.1699,
+  "max_share": 0.0306
+ },
+ "merged_like_the_w1_report": {
+  "experts": 24,
+  "dead": 0,
+  "entropy_bits": 4.5343,
+  "max_entropy_bits": 4.585,
+  "max_share": 0.0588
+ }
+}

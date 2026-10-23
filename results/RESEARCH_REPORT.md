@@ -2,7 +2,7 @@
 
 # Public research evidence report — snapshot 2026-10-23
 
-This is a **curated, secondary summary** of closed internal experiments, not an independent rerun or a checkpoint release. Current private W1 experiments are **not** included.
+This is a **curated, secondary summary** of closed internal experiments, not an independent rerun or a checkpoint release. The preregistered V3 round W1 (closed) is summarised below; W2 is running and not included.
 
 ## Series and interpretations
 
@@ -12,6 +12,7 @@ This is a **curated, secondary summary** of closed internal experiments, not an 
 | F1–F4 | Byte-level controls / kernels | Mixed partial improvements, no general decode win established |
 | F5 | ~17M, 8,192 BPE | MoE val 2.1166, AM soft ~2.189, AM hard ~3.345; F5 Q gate **failed** |
 | Overnight 2026-10-22/23 | Same corpus/scale, 12 configurations × 3 paired seeds | Strongest FixedDepth variants approach MoE loss at higher estimated FLOP |
+| V3 W1 2026-10-23 | Same corpus/scale, 16 configurations × 3 seeds, preregistered | Expert tying and hierarchical routing cost quality; anytime loss repairs the hard path but not to MoE level |
 
 Do **not** directly compare byte-level NLL with BPE nat/token.
 
@@ -35,6 +36,22 @@ Training: 9,000 steps, batch 32, context 512, same tokenization and split; mean 
 | H01_p05 | 6.3677 | 0.49× | 17.15M | hard survival |
 
 Paired 95% confidence intervals for AM−MoE validation NLL (nat/token, n=3): **H05_h8 +0.005 [−0.035,+0.044]**; **H03_m2e2 +0.020 [−0.018,+0.058]**. Intervals crossing zero **do not prove equivalence**. No tested AM variant demonstrates similar quality with lower executed compute than an appropriately matched MoE; lower-compute H04 is **inconclusive** without matched MoE/Dense controls.
+
+## Round V3, W1 — preregistered ablations (48 runs, closed 2026-10-23)
+
+Same corpus, scale and protocol as above (9,000 steps, seeds 42/43/44, validation NLL), new code version (`ba81b4fc02cd7b63`), [sealed preregistration](round_v3_w1/PREREGISTRATION.md) with a directional rule: `SUPPORTED` = Δ ≤ −0.010, 95% CI below 0, 3/3 seeds. Full per-seed tables: [W1 report](round_v3_w1/W1_REPORT.md).
+
+| Question (Δ vs FixedDepth B_fixed 2.1585; MoE 2.1185, Dense 2.1253) | Δ nat | 95% CI | Verdict |
+|---|---:|---|---|
+| Separate bank per hop (3× params) | −0.036 | [−0.049, −0.023] | better |
+| Separate banks, equal total params (package effect) | −0.020 | [−0.030, −0.011] | better |
+| Flat 24-way router instead of hierarchical | −0.033 | [−0.043, −0.024] | better |
+| Random routing (router-value control) | +0.129 | [+0.119, +0.139] | worse |
+| Per-hop bank LayerNorm / per-hop scale-shift | +0.003 / +0.004 | CI contains 0 | inconclusive |
+| Router rule: MoE with `straight_through` / AM with `full_softmax` | +0.015 / +0.007 | CI contains 0 / below threshold | inconclusive |
+| Anytime loss 0.3 / 1.0 vs halting A0 (hard path) | −0.699 / −0.878 | below 0 | better; still 1.27× / 1.18× MoE |
+
+"Equal FLOP" means routed FLOP; executed FLOP with bmm padding differs (reported in the W1 report). Inconclusive rows do not show the absence of an effect.
 
 ## Failure analysis and limitations
 

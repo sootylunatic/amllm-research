@@ -123,7 +123,7 @@ def route_trace(checkpoint: str, device, text: bytes) -> dict:
             where = (hop["positions"] == pos).nonzero().flatten()
             if where.numel():
                 j = where.item()
-                hops.append({"hop": h, "modules": hop["modules"][j].tolist(), "experts": hop["experts"][j].flatten().tolist()})
+                hops.append({"hop": h, "modules": hop["modules"][j].tolist(), "experts": [e for e in hop["experts"][j].flatten().tolist() if e >= 0]})  # -1 = dropped (expert_topp)
         tokens.append({"pos": pos, "byte": chr(ids[0, pos].item()), "hops": hops})
     return {"checkpoint": checkpoint, "config": cfg.to_dict(), "mode": "hard (default inference)", "tokens": tokens}
 

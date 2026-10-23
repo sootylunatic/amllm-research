@@ -127,6 +127,21 @@ FIELDS = ["preset", "seed", "arch", "eval_mode", "params_total", "params_non_emb
           "train_tokens_per_s", "train_seconds", "expert_usage_entropy", "expert_usage_entropy_max", "dead_experts", "max_expert_share"]
 
 
+def effective_config(preset: str, overrides: dict) -> tuple[ModelConfig, bool]:
+    """The model configuration of a preset with --set overrides, and whether the overrides were applied.
+
+    Legacy rule (kept so that old commands reproduce): overrides apply to AM-LLM presets that halt. Since round V3 they
+    also apply to every `*_f5` preset (moe_f5, dense_f5, amllm_f5); before, `--set route_weighting=...` on moe_f5 was
+    silently ignored."""
+    kw = dict(PRESETS[preset])
+    applies = (kw["arch"] == "amllm" and kw.get("halt_rule", "survival") != "none") or preset.endswith("_f5")
+    if applies:
+        # the E03 sweep presets keep their own ponder coefficient
+        kw.update({k: v for k, v in overrides.items() if not (preset.startswith("amllm_p") and k == "ponder_coefficient")})
+    cfg = ModelConfig(**kw)
+    return cfg, applies
+
+
 def check_reusable(run_dir: Path, cfg: ModelConfig, tc: TrainConfig, allow_legacy: bool = False) -> None:
     """--skip-existing may reuse a finished run only if model/train configuration, data split and training code
     are identical. Runs stored before the code hash was recorded need an explicit allow_legacy."""
@@ -180,7 +195,7 @@ def main():
                    help="with --skip-existing: also reuse runs stored before the training-code hash was recorded")
     p.add_argument("--dispatch", default="bmm", choices=["loop", "bmm", "grouped"],
                    help="training dispatch; bmm is numerically equivalent to loop (tested); triton is inference only")
-    p.add_argument("--set", nargs="*", default=[], help="key=value overrides applied to every amllm-arch preset")
+    p.add_argument("--set", nargs="*", default=[], help="key=value overrides applied to halting amllm-arch presets and to every *_f5 preset")
     a = p.parse_args()
     overrides = parse_set(a.set)
     out = Path("results") / a.name
@@ -189,12 +204,14 @@ def main():
     for preset in a.presets.split(","):
         for seed in (int(s) for s in a.seeds.split(",")):
             run_dir = out / f"{preset}_s{seed}"
-            kw = dict(PRESETS[preset])
-            if kw["arch"] == "amllm" and kw.get("halt_rule", "survival") != "none":
-                # the E03 sweep presets keep their own ponder coefficient
-                kw.update({k: v for k, v in overrides.items()
-                           if not (preset.startswith("amllm_p") and k == "ponder_coefficient")})
-            cfg = ModelConfig(**kw)
+            cfg, applied = effective_config(preset, overrides)
+            if overrides and not applied:
+                print(f"WARNING: --set {overrides} is not applied to preset {preset} (legacy rule)", flush=True)
+            if applied:  # an override that did not reach the configuration must never go unnoticed
+                missing = {k: v for k, v in overrides.items()
+                           if getattr(cfg, k) != v and not (preset.startswith("amllm_p") and k == "ponder_coefficient")}
+                if missing:
+                    raise SystemExit(f"--set not reflected in the configuration of {preset}: {missing}")
             tc = TrainConfig(data=a.data, steps=a.steps, batch=a.batch, lr=a.lr, seed=seed,
                              eval_every=a.eval_every, dispatch=a.dispatch, run_dir=str(run_dir))
             if a.skip_existing and (run_dir / "report.json").exists():

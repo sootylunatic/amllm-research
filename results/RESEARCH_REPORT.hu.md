@@ -2,7 +2,7 @@
 
 # Publikus kutatási jelentés — 2026-10-23-i állapot
 
-A lezárt belső kísérletek **másodlagos, auditált összesítője**, nem független újrafuttatás vagy checkpointkiadás. A most futó privát W1 eredményei **nem szerepelnek** benne.
+A lezárt belső kísérletek **másodlagos, auditált összesítője**, nem független újrafuttatás vagy checkpointkiadás. Az előregisztrált V3 kör lezárt W1 hulláma alább szerepel; a most futó W2 nem.
 
 | Fázis | Modell/adat | Értelmezés |
 |---|---|---|
@@ -10,6 +10,7 @@ A lezárt belső kísérletek **másodlagos, auditált összesítője**, nem fü
 | F1–F4 | Byte és kernel | Vegyes részeredmények, általános decode-előny nincs |
 | F5 | ~17M, 8 192 BPE | MoE 2,1166, AM soft ~2,189, hard ~3,345; eredeti Q kapu **bukott** |
 | Éjszaka 2026-10-22/23 | 12 konfiguráció × 3 seed | Legjobb FixedDepth MoE-közeli NLL több FLOP mellett |
+| V3 W1 2026-10-23 | 16 konfiguráció × 3 seed, előregisztrálva | Az expert-kötés és a hierarchikus routing ront; az anytime-veszteség rendbe hozza a kemény utat, de nem MoE-szintre |
 
 A bájtszintű és BPE nat/token loss **nem összevethető közvetlenül**.
 
@@ -33,6 +34,22 @@ A bájtszintű és BPE nat/token loss **nem összevethető közvetlenül**.
 | H01_p05 | 6,3677 | 0,49× | 17,15M | hard survival |
 
 Párosított 95% CI (AM−MoE val NLL, n=3): **H05_h8 +0,005 [−0,035;+0,044]**, **H03_m2e2 +0,020 [−0,018;+0,058]**. A nulla jelenléte **nem bizonyít ekvivalenciát**. Egyetlen mért AM sem igazolta a MoE-közeli minőséget kevesebb tényleges számítással. A H04 **INCONCLUSIVE**, mert hiányzik a hasonló FLOP-os MoE/Dense kontroll.
+
+## V3 kör, W1 — előregisztrált ablációk (48 futás, lezárva 2026-10-23)
+
+Azonos korpusz, méret és protokoll (9000 lépés, seed 42/43/44, validációs NLL), új kódverzió (`ba81b4fc02cd7b63`), [lezárt előregisztráció](round_v3_w1/PREREGISTRATION.hu.md) irányított szabállyal: `SUPPORTED` = Δ ≤ −0,010, a 95%-os CI 0 alatt, 3/3 seed. Seedenkénti táblák: [W1 riport](round_v3_w1/W1_REPORT.hu.md).
+
+| Kérdés (Δ a FixedDepth B_fixedhez, 2,1585; MoE 2,1185, Dense 2,1253) | Δ nat | 95% CI | Ítélet |
+|---|---:|---|---|
+| Külön bank minden hopnak (3× paraméter) | −0,036 | [−0,049, −0,023] | jobb |
+| Külön bankok, azonos össz-paraméter (csomaghatás) | −0,020 | [−0,030, −0,011] | jobb |
+| Lapos 24-utas router a hierarchikus helyett | −0,033 | [−0,043, −0,024] | jobb |
+| Véletlen routing (a router értékének kontrollja) | +0,129 | [+0,119, +0,139] | rosszabb |
+| Hoponkénti bank-LayerNorm / hoponkénti skála-eltolás | +0,003 / +0,004 | a CI tartalmazza a 0-t | INCONCLUSIVE |
+| Router-szabály: MoE `straight_through`-val / AM `full_softmax`-szal | +0,015 / +0,007 | a CI tartalmazza a 0-t / küszöb alatt | INCONCLUSIVE |
+| Anytime-veszteség 0,3 / 1,0 a halting A0-hoz (kemény út) | −0,699 / −0,878 | 0 alatt | jobb; még 1,27× / 1,18× MoE |
+
+Az „azonos FLOP” routolt FLOP-ot jelent; a bmm-paddinggel végrehajtott FLOP eltér (a W1 riportban). Az INCONCLUSIVE sorok nem mutatják a hatás hiányát.
 
 ## Halting, decode és memória
 

@@ -128,13 +128,18 @@ class HierarchicalModuleBank(nn.Module):
         probability of the selected routes (straight-through), so k=1 routers learn without changing the forward.
     router_mode="random": route choices are uniform random and weights uniform (1/k): a training-time
         "no learned routing" control with identical parameters and compute.
+    expert_topp=p > 0 (AD03 adaptive K): of the expert_k best experts a token keeps only the leading ones whose full
+        softmax probability, summed before them, is still below p (at least one). Dropped routes are not computed and
+        not counted; the kept weights follow `weighting` restricted to the kept routes. 0 = off (always expert_k).
     """
 
     def __init__(self, width: int, n_modules: int, module_k: int,
                  experts_per_module: int, expert_k: int, hidden: int,
-                 weighting: str = "topk_softmax", router_mode: str = "learned"):
+                 weighting: str = "topk_softmax", router_mode: str = "learned", expert_topp: float = 0.0):
         super().__init__()
         assert weighting in ("topk_softmax", "full_softmax", "straight_through") and router_mode in ("learned", "random")
+        assert 0.0 <= expert_topp <= 1.0 and not (expert_topp > 0 and router_mode == "random")
+        self.expert_topp = expert_topp
         self.n_modules, self.module_k = n_modules, module_k
         self.n_experts, self.expert_k = experts_per_module, expert_k
         self.weighting, self.router_mode = weighting, router_mode
@@ -168,6 +173,21 @@ class HierarchicalModuleBank(nn.Module):
             weights = weights + (full - full.detach())  # the bracket is exactly 0 in the forward pass
         return idx, weights
 
+    def _select_topp(self, scores: Tensor, k: int, p: float) -> tuple[Tensor, Tensor, Tensor]:
+        """Adaptive K: (indices, weights, keep mask) of the leading top-k routes whose preceding full-softmax mass < p."""
+        idx = (torch.rand(scores.shape, device=scores.device) if self.random_routing else scores).topk(k, dim=-1).indices
+        full = scores.softmax(-1).gather(-1, idx)
+        if self.random_routing:  # random picks are not sorted by probability: order them so the mass rule applies
+            full, order = full.sort(-1, descending=True)
+            idx = idx.gather(-1, order)
+        keep = (full.detach().cumsum(-1) - full.detach()) < p                    # the first route is always kept
+        if self.weighting == "full_softmax":
+            return idx, full * keep, keep
+        weights = scores.gather(-1, idx).masked_fill(~keep, float("-inf")).softmax(-1)
+        if self.weighting == "straight_through":
+            weights = weights + (full - full.detach()) * keep
+        return idx, weights, keep
+
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         n, M, E = x.shape[0], self.n_modules, self.n_experts
         if n == 0:
@@ -176,13 +196,24 @@ class HierarchicalModuleBank(nn.Module):
         m_scores = self.router(x)                                         # [N,M]
         m_idx, m_w = self._select(m_scores, self.module_k)                # [N,Km]
         e_scores = torch.einsum("nd,nkde->nke", x, self.expert_router_w[m_idx]) + self.expert_router_b[m_idx]
-        e_idx, e_w = self._select(e_scores, self.expert_k)                # [N,Km,Ke]
-        self.last_route = (m_idx.detach(), (m_idx[..., None] * E + e_idx).detach())
+        if self.expert_topp > 0:
+            e_idx, e_w, keep = self._select_topp(e_scores, self.expert_k, self.expert_topp)
+        else:
+            e_idx, e_w = self._select(e_scores, self.expert_k)            # [N,Km,Ke]
+        global_e = m_idx[..., None] * E + e_idx
+        if self.expert_topp > 0:  # dropped routes appear as -1 in the trace
+            self.last_route = (m_idx.detach(), global_e.masked_fill(~keep, -1).detach())
+        else:
+            self.last_route = (m_idx.detach(), global_e.detach())
 
         weight = (m_w[..., None] * e_w).reshape(-1)
-        global_id = (m_idx[..., None] * E + e_idx).reshape(-1)
+        global_id = global_e.reshape(-1)
         token = torch.arange(n, device=x.device)[:, None, None].expand_as(e_idx).reshape(-1)
-        y, counts = self.experts(x, token, global_id, weight, routes_per_token=self.module_k * self.expert_k)
+        if self.expert_topp > 0:  # variable routes per token: only kept assignments are dispatched (atomic sum)
+            kept = keep.reshape(-1).nonzero().squeeze(1)
+            y, counts = self.experts(x, token[kept], global_id[kept], weight[kept])
+        else:
+            y, counts = self.experts(x, token, global_id, weight, routes_per_token=self.module_k * self.expert_k)
         expert_counts = counts.view(M, E)
         if not self.diagnostics:
             return y, x.new_zeros(()), torch.zeros(M, dtype=torch.long, device=x.device), expert_counts
@@ -195,6 +226,7 @@ class HierarchicalModuleBank(nn.Module):
         e_prob = e_scores.float().softmax(-1).reshape(-1, E)
         sel = module_counts.clamp(min=1).float()[:, None]
         e_imp = torch.zeros(M, E, device=x.device).index_add(0, m_idx.flatten(), e_prob) / sel
-        e_load = expert_counts.float() / (sel * self.expert_k)
+        routed = expert_counts.sum(1).clamp(min=1).float()[:, None] if self.expert_topp > 0 else sel * self.expert_k
+        e_load = expert_counts.float() / routed
         expert_balance = E * torch.sum(m_load[:, None] * e_imp * e_load)
         return y, module_balance + expert_balance, module_counts, expert_counts

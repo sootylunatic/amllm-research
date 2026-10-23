@@ -64,7 +64,8 @@ How they relate (as in the canonical goal document): **A is the original scienti
 | **Phase 2 — F1–F4** | byte-level | Can the paper saving become a real one? | Top-1 routing with a gradient works; bucketed skipping and kernel work (Triton, CUDA Graph, KV-cache decode) gave partial results and no general decode win. |
 | **F5** (exploratory) | ~17M, 8,192 BPE | Do the effects survive a larger model and real code? | The quality gate **failed**; learned halting loses a lot of quality when truncated at inference. |
 | **Overnight round** (2026-10-22/23) | ~17M | 12 configurations × 3 seeds | The best FixedDepth variants approach MoE loss with **24–31% more** estimated FLOP; no variant matches MoE with less compute. |
-| **Round V3** (in progress) | ~17M | Why does halting fail? Which part of the family helps: expert tying, hierarchical routing, shared normalisation? | Preregistered, controlled ablations are running; **results are published after the round is closed.** |
+| **Round V3 — W0, W1** (closed 2026-10-23) | ~17M | Why does halting fail? Which part of the family costs quality: expert tying, hierarchical routing, shared normalisation, the router's training rule? | **W1, 48 preregistered runs:** expert tying across hops and hierarchical routing each cost quality (separate banks −0.020…−0.036 nat, flat router −0.033 nat against FixedDepth); for shared normalisation and the training rule no effect was detected (inconclusive, not equivalence). An anytime (multi-exit) loss repairs the hard halting path (−0.70…−0.88 nat) but stays ≥ 1.18× the MoE loss. [W1 report](results/round_v3_w1/W1_REPORT.md) |
+| **Round V3 — W2** (running) | ~17M | Attention sharing, FLOP-matched depth/Top-K/granularity points with matched MoE/Dense controls, adaptive K | Running under a [sealed preregistration](results/round_v3_w2/PREREGISTRATION.md); results after the round. |
 
 The detailed numbers, confidence intervals and limitations are in the [research report](results/RESEARCH_REPORT.md); the decisions behind each step are the [technical records](docs/04-decisions/README.md).
 
@@ -72,8 +73,8 @@ The detailed numbers, confidence intervals and limitations are in the [research 
 
 1. **Routing is learned and used.** In the small models the learned routing reaches a ~20% lower loss than random routing with the same parameters and compute.
 2. **Hop-specific attention matters most** in the small models; it is not a capacity artefact.
-3. **At ~17M no variant gets MoE quality with fewer executed FLOP.** The six-hop FixedDepth is structurally an *expert-tied MoE*; tying, two-level routing and shared normalisation change together and have not yet been separated.
-4. **Current learned halting does not give a usable trade-off:** it is trained softly (all hops run) and applied hard (tokens stop), and that mismatch costs a lot. This is evidence against this *mechanism*, not against adaptive computation in general.
+3. **At ~17M no variant gets MoE quality with fewer executed FLOP.** The six-hop FixedDepth is structurally an *expert-tied MoE*; expert tying, two-level routing, shared normalisation and the router's training rule (`straight_through` vs `topk_softmax`) change together; the W1 round separated them: tying and hierarchical routing cost quality, for normalisation and the training rule no effect was detected (inconclusive at n = 3). The best FixedDepth variants (2.122–2.125) reach the dense control but not MoE (2.119).
+4. **Current learned halting does not give a usable trade-off:** it is trained softly (all hops run) and applied hard (tokens stop), and that mismatch costs a lot. This is evidence against this *mechanism*, not against adaptive computation in general. An anytime (multi-exit) loss largely repairs the hard path (W1), but costs final quality and still saves little compute.
 5. **Real speed has barely been measured:** one early batch-1 decode run had AM-LLM at 632 and MoE at 884 tokens/s.
 
 ## What is *not* claimed

@@ -50,17 +50,21 @@ def analyse(cfg: ModelConfig, model, x: torch.Tensor, **mode) -> dict:
     for h, step in enumerate(info["trace"]):
         pos = step["positions"]
         # AM-LLM: route unit = module; MoE: route unit = expert of that layer
-        units = step["modules"] if cfg.arch == "amllm" else (step["experts"] % cfg.n_experts).reshape(len(pos), -1)
-        k = units.shape[1]
-        flat_units = units.flatten()
-        flat_cls = cls[pos].repeat_interleave(k)
+        # dropped routes of adaptive K (expert_topp) are -1 in the trace: they are no unit and are left out
+        raw = step["modules"] if cfg.arch == "amllm" else step["experts"].reshape(len(pos), -1)
+        k = raw.shape[1]
+        flat_raw = raw.flatten()
+        kept = flat_raw >= 0
+        flat_units = (flat_raw[kept] % n_units) if cfg.arch != "amllm" else flat_raw[kept]
+        flat_cls = cls[pos].repeat_interleave(k)[kept]
+        cls_tokens = torch.bincount(cls[pos], minlength=n_cls).float()
         counts = torch.bincount(flat_units, minlength=n_units)
         mi_bits, mi_norm = mutual_information(flat_units, flat_cls, n_units, n_cls)
         cond = torch.zeros(n_cls, n_units)
         cond.index_put_((flat_cls, flat_units), torch.ones(len(flat_units)), accumulate=True)
         top_unit = {CODE_BYTE_CLASSES[c]: int(cond[c].argmax()) for c in range(n_cls) if cond[c].sum() > 0}
         # fraction of the class's tokens that selected its most frequent unit (each token picks k units)
-        top_share = {CODE_BYTE_CLASSES[c]: round((cond[c].max() * k / cond[c].sum()).item(), 3)
+        top_share = {CODE_BYTE_CLASSES[c]: round((cond[c].max() / cls_tokens[c]).item(), 3)
                      for c in range(n_cls) if cond[c].sum() > 0}
         r = {"step": h, "tokens": len(pos), "usage": counts.tolist(),
              "usage_entropy_norm": entropy(counts) / math.log(n_units) if n_units > 1 else 1.0,
@@ -69,10 +73,10 @@ def analyse(cfg: ModelConfig, model, x: torch.Tensor, **mode) -> dict:
              "top_unit_per_byteclass": top_unit, "top_unit_share_per_byteclass": top_share}
         if cfg.arch == "amllm":
             ge = step["experts"].flatten()
-            ec = torch.bincount(ge, minlength=cfg.n_modules * cfg.experts_per_module)
+            ec = torch.bincount(ge[ge >= 0], minlength=cfg.n_modules * cfg.experts_per_module)
             r["expert_usage_entropy_norm"] = entropy(ec) / math.log(len(ec))
             r["dead_experts"] = int((ec == 0).sum())
-            sets = {p: frozenset(u) for p, u in zip(pos.tolist(), units.tolist())}
+            sets = {p: frozenset(u) for p, u in zip(pos.tolist(), raw.tolist())}  # AM: modules (never -1)
             if prev_sets is not None:
                 common = [p for p in sets if p in prev_sets]
                 r["same_module_set_as_prev_hop"] = sum(sets[p] == prev_sets[p] for p in common) / max(1, len(common))
