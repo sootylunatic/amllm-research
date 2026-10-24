@@ -2,7 +2,7 @@
 
 # Publikus kutatási jelentés — 2026-10-23-i állapot
 
-A lezárt belső kísérletek **másodlagos, auditált összesítője**, nem független újrafuttatás vagy checkpointkiadás. Az előregisztrált V3 kör lezárt W1 hulláma alább szerepel; a most futó W2 nem.
+A lezárt belső kísérletek **másodlagos, auditált összesítője**, nem független újrafuttatás vagy checkpointkiadás. Az előregisztrált V3 kör lezárt W1 és W2 hulláma alább szerepel.
 
 | Fázis | Modell/adat | Értelmezés |
 |---|---|---|
@@ -11,6 +11,7 @@ A lezárt belső kísérletek **másodlagos, auditált összesítője**, nem fü
 | F5 | ~17M, 8 192 BPE | MoE 2,1166, AM soft ~2,189, hard ~3,345; eredeti Q kapu **bukott** |
 | Éjszaka 2026-10-22/23 | 12 konfiguráció × 3 seed | Legjobb FixedDepth MoE-közeli NLL több FLOP mellett |
 | V3 W1 2026-10-23 | 16 konfiguráció × 3 seed, előregisztrálva | Az expert-kötés és a hierarchikus routing ront; az anytime-veszteség rendbe hozza a kemény utat, de nem MoE-szintre |
+| V3 W2 2026-10-24 | 22 konfiguráció × 3 seed, előregisztrálva | A hoponkénti attention számít; 0,85× routolt FLOP-on az AM kikap az illesztett MoE-tól; az FDC1 csak 1,83× paraméterrel van a MoE alatt |
 
 A bájtszintű és BPE nat/token loss **nem összevethető közvetlenül**.
 
@@ -50,6 +51,27 @@ Azonos korpusz, méret és protokoll (9000 lépés, seed 42/43/44, validációs 
 | Anytime-veszteség 0,3 / 1,0 a halting A0-hoz (kemény út) | −0,699 / −0,878 | 0 alatt | jobb; még 1,27× / 1,18× MoE |
 
 Az „azonos FLOP” routolt FLOP-ot jelent; a bmm-paddinggel végrehajtott FLOP eltér (a W1 riportban). Az INCONCLUSIVE sorok nem mutatják a hatás hiányát.
+
+## V3 kör, W2 — attention, illesztett pontok, FDC1, adaptív K (66 futás, lezárva 2026-10-24)
+
+Új kódverzió (`cd909ea282660f0f`); a horgonyok ±0,0015-ön belül reprodukálják a W1-et (MoE 2,1180, Dense 2,1254, FixedDepth B_fixed 2,1599). [Lezárt előregisztráció](round_v3_w2/PREREGISTRATION.hu.md) · [W2 riport](round_v3_w2/W2_REPORT.hu.md) minden seedenkénti értékkel.
+
+| Kérdés | Δ nat | 95% CI | Ítélet |
+|---|---:|---|---|
+| Egy közös attention a hoponkénti helyett (B_fixed) | +0,174 | [+0,134, +0,214] | rosszabb |
+| Közös attention + hoponkénti adapter | +0,132 | [+0,110, +0,153] | rosszabb |
+| Minden második hop csak expert (0,79× routolt FLOP) | +0,114 | [+0,035, +0,192] | rosszabb |
+| 3 attention-készlet | +0,020 | [−0,012, +0,051] | INCONCLUSIVE |
+| 8 hop, azonos routolt FLOP és paraméter | +0,008 | [−0,029, +0,045] | INCONCLUSIVE |
+| 4 hop, azonos routolt FLOP | +0,074 | [+0,031, +0,118] | rosszabb |
+| **AM finomabb expertek − illesztett MoE, 0,85× routolt FLOP, azonos paraméter** | **+0,054** | [+0,030, +0,077] | **rosszabb** |
+| **AM kisebb expertek − illesztett MoE, 0,86×, azonos paraméter** | **+0,044** | [+0,019, +0,069] | **rosszabb** |
+| FDC1 (3 bank + lapos routing) − B_fixed | −0,073 | [−0,076, −0,070] | jobb |
+| FDC1 − MoE (leíró: 1,83× paraméter, 1,38× végrehajtott FLOP) | −0,031 | [−0,052, −0,010] | kisebb veszteség, nem illesztett |
+| Anytime 0,5 a halting A0-hoz (kemény út) | −0,859 | [−1,135, −0,583] | jobb; még 1,19× MoE |
+| Adaptív K (p 0,7) − fix K = 1 | −0,068 | [−0,096, −0,039] | jobb |
+
+Az azonos FLOP routolt FLOP-ot jelent. A tanító split 53M token, így minden futás kb. 2,8-szor látja; az FDC1 előnye a MoE-val szemben a tanítás során csökken (2k lépésnél −0,127, 9k-nál −0,031). Az INCONCLUSIVE sorok nem mutatják a hatás hiányát.
 
 ## Halting, decode és memória
 

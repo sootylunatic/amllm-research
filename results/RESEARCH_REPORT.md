@@ -2,7 +2,7 @@
 
 # Public research evidence report — snapshot 2026-10-23
 
-This is a **curated, secondary summary** of closed internal experiments, not an independent rerun or a checkpoint release. The preregistered V3 round W1 (closed) is summarised below; W2 is running and not included.
+This is a **curated, secondary summary** of closed internal experiments, not an independent rerun or a checkpoint release. The preregistered V3 round, waves W1 and W2 (both closed), is summarised below.
 
 ## Series and interpretations
 
@@ -13,6 +13,7 @@ This is a **curated, secondary summary** of closed internal experiments, not an 
 | F5 | ~17M, 8,192 BPE | MoE val 2.1166, AM soft ~2.189, AM hard ~3.345; F5 Q gate **failed** |
 | Overnight 2026-10-22/23 | Same corpus/scale, 12 configurations × 3 paired seeds | Strongest FixedDepth variants approach MoE loss at higher estimated FLOP |
 | V3 W1 2026-10-23 | Same corpus/scale, 16 configurations × 3 seeds, preregistered | Expert tying and hierarchical routing cost quality; anytime loss repairs the hard path but not to MoE level |
+| V3 W2 2026-10-24 | Same corpus/scale, 22 configurations × 3 seeds, preregistered | Per-hop attention matters; AM loses to matched MoE at 0.85× routed FLOP; FDC1 below MoE only with 1.83× params |
 
 Do **not** directly compare byte-level NLL with BPE nat/token.
 
@@ -52,6 +53,27 @@ Same corpus, scale and protocol as above (9,000 steps, seeds 42/43/44, validatio
 | Anytime loss 0.3 / 1.0 vs halting A0 (hard path) | −0.699 / −0.878 | below 0 | better; still 1.27× / 1.18× MoE |
 
 "Equal FLOP" means routed FLOP; executed FLOP with bmm padding differs (reported in the W1 report). Inconclusive rows do not show the absence of an effect.
+
+## Round V3, W2 — attention, matched points, FDC1, adaptive K (66 runs, closed 2026-10-24)
+
+New code version (`cd909ea282660f0f`); anchors reproduce W1 within ±0.0015 (MoE 2.1180, Dense 2.1254, FixedDepth B_fixed 2.1599). [Sealed preregistration](round_v3_w2/PREREGISTRATION.md) · [W2 report](round_v3_w2/W2_REPORT.md) with all per-seed values.
+
+| Question | Δ nat | 95% CI | Verdict |
+|---|---:|---|---|
+| One shared attention vs per-hop (B_fixed) | +0.174 | [+0.134, +0.214] | worse |
+| Shared attention + per-hop adapter | +0.132 | [+0.110, +0.153] | worse |
+| Every second hop expert-only (0.79× routed FLOP) | +0.114 | [+0.035, +0.192] | worse |
+| 3 attention sets | +0.020 | [−0.012, +0.051] | inconclusive |
+| 8 hops, equal routed FLOP and params | +0.008 | [−0.029, +0.045] | inconclusive |
+| 4 hops, equal routed FLOP | +0.074 | [+0.031, +0.118] | worse |
+| **AM finer experts − matched MoE, 0.85× routed FLOP, equal params** | **+0.054** | [+0.030, +0.077] | **worse** |
+| **AM smaller experts − matched MoE, 0.86×, equal params** | **+0.044** | [+0.019, +0.069] | **worse** |
+| FDC1 (3 banks + flat routing) − B_fixed | −0.073 | [−0.076, −0.070] | better |
+| FDC1 − MoE (descriptive: 1.83× params, 1.38× executed FLOP) | −0.031 | [−0.052, −0.010] | lower loss, not matched |
+| Anytime 0.5 vs halting A0 (hard path) | −0.859 | [−1.135, −0.583] | better; still 1.19× MoE |
+| Adaptive K (p 0.7) − fixed K = 1 | −0.068 | [−0.096, −0.039] | better |
+
+Equal FLOP means routed FLOP. The training split has 53M tokens, so every run sees it about 2.8 times; FDC1's lead over MoE shrinks during training (−0.127 at 2k steps, −0.031 at 9k). Inconclusive rows do not show the absence of an effect.
 
 ## Failure analysis and limitations
 

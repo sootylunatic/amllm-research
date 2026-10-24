@@ -1,0 +1,55 @@
+{
+ "checkpoint": "results/round_v3_w2/AD03b/amllm_f5_s44/checkpoint.pt",
+ "platform": "Linux-6.8.0-94-generic-x86_64-with-glibc2.39",
+ "torch": "2.11.0+cu128",
+ "windows": 128,
+ "tokens": 65536,
+ "split": "val",
+ "halt_rule": "survival",
+ "n_hops": 6,
+ "trace_vs_forward_max_abs_logit_diff": 0.0,
+ "nll_per_hop_soft": [
+  3.8139,
+  3.2262,
+  2.7198,
+  2.3085,
+  2.2691,
+  2.2535
+ ],
+ "soft_final": 2.2535,
+ "oracle_min_over_hops_soft": 1.9544,
+ "mean_survival_before_hop": [
+  1.0,
+  0.7893,
+  0.6391,
+  0.4566,
+  0.2527,
+  0.1461
+ ],
+ "hard": {
+  "0.1": {
+   "val_nll": 2.2556,
+   "mean_hops": 5.397,
+   "random_exit_matched_nll_hard": 2.2719,
+   "random_exit_matched_nll_from_soft_trace": 2.2718
+  },
+  "0.3": {
+   "val_nll": 2.2974,
+   "mean_hops": 4.234,
+   "random_exit_matched_nll_hard": 2.3817,
+   "random_exit_matched_nll_from_soft_trace": 2.3805
+  },
+  "0.5": {
+   "val_nll": 2.5184,
+   "mean_hops": 3.318,
+   "random_exit_matched_nll_hard": 2.6326,
+   "random_exit_matched_nll_from_soft_trace": 2.6277
+  },
+  "0.8": {
+   "val_nll": 3.5154,
+   "mean_hops": 1.596,
+   "random_exit_matched_nll_hard": 3.505,
+   "random_exit_matched_nll_from_soft_trace": 3.4777
+  }
+ }
+}

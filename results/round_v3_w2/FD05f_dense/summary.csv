@@ -1,0 +1,3 @@
+preset,seed,arch,eval_mode,params_total,params_non_embedding,val_loss,val_bpb,val_bits_per_token,val_ppl,mean_hops,p95_hops,flops_per_token,flops_per_token_ideal,flops_per_token_executed,median_batch_ms,train_tokens_per_s,train_seconds,expert_usage_entropy,expert_usage_entropy_max,dead_experts,max_expert_share
+dense_f5,42,dense,fixed,11967936,5479872,2.1724042892456055,,3.1341168949005485,8.779366823267654,6.0,6.0,19567104.0,19567104.0,19567104.0,17.981438897550106,438235,336.5,-0.0,3.871201010907891,48,0.0
+dense_f5,43,dense,fixed,11967936,5479872,2.1660852432250977,,3.1250004385436125,8.724064513221512,6.0,6.0,19567104.0,19567104.0,19567104.0,17.99850072711706,438143,336.5,-0.0,3.871201010907891,48,0.0
