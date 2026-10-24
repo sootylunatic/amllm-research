@@ -2,7 +2,7 @@
 
 # Public research evidence report — snapshot 2026-10-23
 
-This is a **curated, secondary summary** of closed internal experiments, not an independent rerun or a checkpoint release. The preregistered V3 round, waves W1–W3 (all closed), is summarised below.
+This is a **curated, secondary summary** of closed internal experiments, not an independent rerun or a checkpoint release. The preregistered V3 round, waves W1–W4 (all closed), is summarised below.
 
 ## Series and interpretations
 
@@ -89,6 +89,19 @@ Training code unchanged from W2, so W2 runs are compared directly. [Sealed prere
 | A success gate, halting models (padding-free executed FLOP ≤ 0.90× MoE **and** loss ≤ 1.03× MoE) | 0.80–0.86× FLOP, 1.18–1.23× loss | | **not met** (0/3) |
 
 Exploratory decode benchmark (one RTX 3090, batch 1, not preregistered): fixing a per-call expert-weight conversion and the sort/scatter dispatch makes AM-LLM decoding 3–3.3× faster (FDC1 2,179 vs MoE 2,293 tokens/s) and the adaptive-depth model ~23× faster (88 → ~2,000 tokens/s); validation loss changes by ≤ 0.003. At batch 32 the MoE stays faster.
+
+## Round V3, W4 — descriptive generalization check on an independent holdout (closed 2026-10-24)
+
+A new holdout (H-A) of fresh npm packages, independent of all corpus splits by name, scope, name stem, repository and exact/near-duplicate content; part H1 (154 packages, 3.06M tokens) opened once for 36 frozen checkpoints; part H2 stays sealed. Not a confirmation (no AM candidate passed its gate). [Preregistration](round_v3_w4/PREREGISTRATION.md) · [W4 report](round_v3_w4/W4_REPORT.md).
+
+| Pair | Validation Δ | Holdout Δ [package-bootstrap 95% CI] | Label |
+|---|---:|---|---|
+| FDC1 − MoE12 (equal size) | +0.019 | +0.017 [+0.014, +0.020] | transfers |
+| Flat − hierarchical routing, 1 bank / 3 banks | −0.034 / −0.046 | −0.030 / −0.024 | transfers |
+| 3 banks − 1 bank, hierarchical / flat | −0.027 / −0.039 | −0.008 / −0.002 (CI contains 0) | transfers / undecided |
+| FDC1 − small MoE | −0.031 | +0.001 (CI contains 0) | undecided |
+| Anytime loss vs halting A0 (hard path) | −0.859 | −0.937 | transfers |
+| 18k vs 9k steps (MoE12 / FDC1) | −0.018 / −0.036 | holdout NLL rises 2.508 → 2.613 / 2.525 → 2.593 | longer training generalizes worse |
 
 ## Failure analysis and limitations
 

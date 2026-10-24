@@ -1,0 +1,30 @@
+H1: 154 packages, 36 runs
+
+config | val NLL | holdout NLL | holdout - val
+MoE12_18k | 2.0499 | 2.6128 | +0.5630
+FDC1_18k | 2.0510 | 2.5934 | +0.5424
+MoE12 | 2.0680 | 2.5084 | +0.4404
+FDC1 | 2.0870 | 2.5254 | +0.4384
+B_moe | 2.1180 | 2.5244 | +0.4064
+B_dense | 2.1254 | 2.5173 | +0.3919
+B1F | 2.1263 | 2.5270 | +0.4007
+B3H | 2.1332 | 2.5492 | +0.4160
+B_fixed | 2.1599 | 2.5567 | +0.3968
+AD02a_3 | 2.5237 | 2.9994 | +0.4757
+AD03b | 2.5409 | 3.0142 | +0.4734
+A0 | 3.3828 | 3.9367 | +0.5539
+
+Spearman rank correlation val vs holdout (12 configs): 0.524
+
+pair | val delta [CI, 3 seeds] verdict | holdout delta [package bootstrap CI] | packages a better | label
+FDC1 - MoE12 | +0.0190 [+0.0003; +0.0377] NOT_SUPPORTED_IN_SCOPE | +0.0170 [+0.0143; +0.0196] | 0.20 | transfers
+FDC1_18k - MoE12_18k | +0.0012 [-0.0179; +0.0203] INCONCLUSIVE | -0.0194 [-0.0250; -0.0145] | 0.75 | not reproduced
+B1F - B_fixed | -0.0336 [-0.0458; -0.0215] SUPPORTED | -0.0298 [-0.0334; -0.0258] | 0.93 | transfers
+FDC1 - B3H | -0.0462 [-0.0682; -0.0242] SUPPORTED | -0.0239 [-0.0305; -0.0162] | 0.90 | transfers
+B3H - B_fixed | -0.0267 [-0.0475; -0.0059] SUPPORTED | -0.0075 [-0.0125; -0.0023] | 0.73 | transfers
+FDC1 - B1F | -0.0393 [-0.0546; -0.0240] SUPPORTED | -0.0016 [-0.0111; +0.0097] | 0.64 | undecided
+MoE12 - B_moe | -0.0500 [-0.0896; -0.0105] SUPPORTED | -0.0160 [-0.0242; -0.0066] | 0.81 | transfers
+B_dense - B_moe | +0.0074 [-0.0316; +0.0464] INCONCLUSIVE | -0.0071 [-0.0160; -0.0005] | 0.51 | not reproduced
+FDC1 - B_moe | -0.0310 [-0.0519; -0.0101] SUPPORTED | +0.0010 [-0.0070; +0.0099] | 0.63 | undecided
+AD02a_3 - A0 | -0.8591 [-1.1352; -0.5829] SUPPORTED | -0.9373 [-0.9753; -0.9025] | 1.00 | transfers
+AD03b - AD02a_3 | +0.0171 [-0.0659; +0.1001] INCONCLUSIVE | +0.0148 [+0.0121; +0.0177] | 0.14 | transfers

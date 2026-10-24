@@ -2,7 +2,7 @@
 
 # Publikus kutatási jelentés — 2026-10-23-i állapot
 
-A lezárt belső kísérletek **másodlagos, auditált összesítője**, nem független újrafuttatás vagy checkpointkiadás. Az előregisztrált V3 kör lezárt W1–W3 hulláma alább szerepel.
+A lezárt belső kísérletek **másodlagos, auditált összesítője**, nem független újrafuttatás vagy checkpointkiadás. Az előregisztrált V3 kör lezárt W1–W4 hulláma alább szerepel.
 
 | Fázis | Modell/adat | Értelmezés |
 |---|---|---|
@@ -87,6 +87,19 @@ A tanítási kód a W2-höz képest változatlan, így a W2-futásokkal közvetl
 | A-sikerkapu, halting modellek (padding nélküli végrehajtott FLOP ≤ 0,90× MoE **és** veszteség ≤ 1,03× MoE) | 0,80–0,86× FLOP, 1,18–1,23× veszteség | | **nem teljesül** (0/3) |
 
 Feltáró dekódolási mérés (egy RTX 3090, batch 1, nem előregisztrált): egy hívásonkénti expertsúly-konverzió és a rendező/szóró dispatch javítása 3–3,3-szorosára gyorsítja az AM-LLM dekódolását (FDC1 2 179 vs MoE 2 293 token/s), az adaptív mélységű modellt ~23-szorosára (88 → ~2 000 token/s); a validációs veszteség legfeljebb 0,003-mal változik. Batch 32-n a MoE marad gyorsabb.
+
+## V3 kör, W4 — leíró általánosítási ellenőrzés független holdouton (lezárva 2026-10-24)
+
+Új holdout (H-A) friss npm-csomagokból, a korpusz minden splitjétől független név, scope, névtő, repository és pontos/közeli duplikátum szerint; a H1 részt (154 csomag, 3,06M token) egyszer nyitottuk meg 36 befagyasztott checkpointra; a H2 lezárva marad. Nem megerősítés (egyik AM-jelölt sem ment át a kapuján). [Előregisztráció](round_v3_w4/PREREGISTRATION.hu.md) · [W4 riport](round_v3_w4/W4_REPORT.hu.md).
+
+| Pár | Validációs Δ | Holdout Δ [csomagszintű bootstrap 95% CI] | Címke |
+|---|---:|---|---|
+| FDC1 − MoE12 (azonos méret) | +0,019 | +0,017 [+0,014, +0,020] | átvihető |
+| Lapos − hierarchikus routing, 1 bank / 3 bank | −0,034 / −0,046 | −0,030 / −0,024 | átvihető |
+| 3 bank − 1 bank, hierarchikus / lapos | −0,027 / −0,039 | −0,008 / −0,002 (a CI tartalmazza a 0-t) | átvihető / nem eldönthető |
+| FDC1 − kis MoE | −0,031 | +0,001 (a CI tartalmazza a 0-t) | nem eldönthető |
+| Anytime-veszteség a halting A0-hoz (kemény út) | −0,859 | −0,937 | átvihető |
+| 18k vs 9k lépés (MoE12 / FDC1) | −0,018 / −0,036 | a holdout NLL nő: 2,508 → 2,613 / 2,525 → 2,593 | a hosszabb tanítás rosszabbul általánosít |
 
 ## Halting, decode és memória
 

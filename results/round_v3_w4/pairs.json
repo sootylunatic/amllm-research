@@ -1,0 +1,2 @@
+{"pairs": [["FDC1", "MoE12"], ["FDC1_18k", "MoE12_18k"], ["B1F", "B_fixed"], ["FDC1", "B3H"], ["B3H", "B_fixed"],
+           ["FDC1", "B1F"], ["MoE12", "B_moe"], ["B_dense", "B_moe"], ["FDC1", "B_moe"], ["AD02a_3", "A0"], ["AD03b", "AD02a_3"]]}

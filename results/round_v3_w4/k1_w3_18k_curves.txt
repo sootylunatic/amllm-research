@@ -1,0 +1,11 @@
+# K1 (H10) re-check on the W3 18k-step runs (code cd909ea282660f0f), 2026-10-24, CPU, from the backed-up report.json files.
+# Method: training-loss curve (every 25 steps); smoothed with a 21-point moving mean (~500 steps); a spike is a point more
+# than 4 robust SD (1.4826 x MAD of the residuals) above the smoothed curve, after step 2,000.
+# Result: no spike in any of the 6 runs; validation plateaus between 14k and 18k (fluctuation within +-0.005-0.01 nat).
+# The instability event seen in W0 on the old 18k curves (~15-16k steps) does not reproduce under this code.
+FDC1_18k  s43: spikes 0 | val 14k 2.0545  15k 2.0584  16k 2.0608  17k 2.0567
+FDC1_18k  s44: spikes 0 | val 14k 2.0520  15k 2.0413  16k 2.0421  17k 2.0400
+FDC1_18k  s42: spikes 0 | val 14k 2.0535  15k 2.0559  16k 2.0524  17k 2.0595
+MoE12_18k s42: spikes 0 | val 14k 2.0470  15k 2.0484  16k 2.0470  17k 2.0544
+MoE12_18k s44: spikes 0 | val 14k 2.0567  15k 2.0510  16k 2.0531  17k 2.0489
+MoE12_18k s43: spikes 0 | val 14k 2.0467  15k 2.0450  16k 2.0486  17k 2.0480

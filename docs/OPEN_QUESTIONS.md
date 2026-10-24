@@ -2,7 +2,7 @@
 
 # Open research questions — contributions welcome
 
-**Evidence snapshot: 2026-10-24 (after V3 W3).** Proposed contribution tracks with the current evidence. Check [Issues](https://github.com/sootylunatic/amllm-research/issues) before duplicating work.
+**Evidence snapshot: 2026-10-24 (after V3 W4).** Proposed contribution tracks with the current evidence. Check [Issues](https://github.com/sootylunatic/amllm-research/issues) before duplicating work.
 
 | ID | Question | Minimum useful evidence | Status (V3) |
 |---|---|---|---|
@@ -13,7 +13,7 @@
 | **R-05** | Can grouped/shared attention or adapters retain quality? | Separate-per-hop positive control and matched compute/parameters | **W2: no** at ~17M — shared attention +0.17, with per-hop adapter +0.13, every second hop expert-only +0.11 nat; 3 attention sets inconclusive (+0.02, CI up to +0.05) |
 | **R-06** | Why is decode slower than MoE? | Same GPU/backend decode, prefill, TTFT, VRAM and profiler | **W3 (exploratory): mostly execution** — a per-call expert-weight conversion and sort/scatter dispatch; fixed paths reach ~95% of MoE at batch 1. Open: large batches, a preregistered measurement |
 | **R-07** | Does smaller-expert H04 give an efficient Pareto point? | 0.85×-FLOP MoE/Dense controls and uncertainty intervals | **W2: no** — at 0.85× routed FLOP the AM-LLM is 0.044–0.054 nat worse than an equal-parameter MoE and worse than the matched dense control |
-| **R-08** | Do findings generalize? | License-audited data, family-level deduplication, paired seeds, external distribution | Open |
+| **R-08** | Do findings generalize? | License-audited data, family-level deduplication, paired seeds, external distribution | **W4 (partly):** on an independent holdout of fresh packages flat routing, the anytime loss and FDC1 < equal-size MoE transfer; bank gains shrink; 18k-step models generalize worse. Open: other data, other sizes |
 | **R-09** | Does the router training rule explain part of the AM–MoE gap? (MoE `topk_softmax`, AM-LLM `straight_through`) | Both rules on both architectures, everything else equal, paired seeds | W1: no effect detected (inconclusive; MoE CI −0.036…+0.066) — more seeds needed |
 | **R-10** | Is the FDC1 advantage (3 banks + flat routing, 2.087 vs MoE 2.118) structural or just more parameters? | A parameter- and routed-FLOP-matched MoE (12 experts/layer, 31.4M), single-factor controls, longer training, executed cost on a padding-free path | **W3: mostly parameters** — FDC1 loses to the equal-size MoE12 at 9k steps (+0.019); at 18k not distinguishable (+0.001, inconclusive, repeated data). Open: a larger corpus |
 
