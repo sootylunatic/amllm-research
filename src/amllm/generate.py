@@ -21,8 +21,8 @@ class Generator:
         cfg = model.cfg
         self.is_amllm = isinstance(model, AdaptiveModularLM)
         if self.is_amllm:
-            from .fastpath import require_default_bank
-            require_default_bank(model)
+            from .fastpath import require_supported
+            require_supported(model)
         if self.is_amllm and not (cfg.attn_per_hop and cfg.halt_rule in ("survival", "none")):
             raise ValueError("KV-cache decoding supports AM-LLM with attention in every hop and survival/no halting")
         self.units = cfg.n_hops if self.is_amllm else cfg.n_layers
@@ -69,13 +69,13 @@ class Generator:
             active = torch.ones(b, s, dtype=torch.bool, device=x.device)
             counts = torch.zeros(b, s, dtype=torch.long, device=x.device)
             for hop in range(cfg.n_hops):
-                weight = (survival * active)[..., None]
+                weight = (survival * active)[..., None].to(x.dtype)  # survival stays fp32; bf16 weights keep a bf16 state
                 if cfg.unshared_attention and hop > 0:
                     attn, norm = m.hop_attentions[hop - 1], m.hop_attn_norms[hop - 1]
                 else:
                     attn, norm = m.attention, m.attn_norm
                 x = x + weight * self._attend(attn, norm(x), positions, hop)
-                delta, _, _, _ = m.bank(m.step_norm(x).reshape(-1, d))
+                delta, _, _, _ = m.bank_for(hop)(m.normed(hop, x.reshape(-1, d)))
                 x = x + weight * delta.view(b, s, d)
                 counts += active
                 if hop < cfg.n_hops - 1 and cfg.halt_rule == "survival":

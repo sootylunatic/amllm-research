@@ -5,6 +5,7 @@
 - [Public evidence report](RESEARCH_REPORT.md): E00–F5 and 36 overnight runs, strengths, failure modes, confidence intervals and disclosure limits.
 - [Round V3 W1 report](round_v3_w1/W1_REPORT.md): 48 preregistered runs (anchors, FD01–FD03, FD07, AD02a) with per-seed values, decision rules, per-bank expert statistics and the AD01 diagnostics; [preregistration](round_v3_w1/PREREGISTRATION.md) and amendments, per-experiment `summary.csv`, analysis JSON in `round_v3_w1/analysis/`.
 - [Round V3 W2 report](round_v3_w2/W2_REPORT.md): 66 preregistered runs (attention sharing, matched quality–compute points, FDC1, adaptive K) with per-seed values and AD01 diagnostics; [preregistration](round_v3_w2/PREREGISTRATION.md), per-experiment `summary.csv`, analysis JSON in `round_v3_w2/analysis/`.
+- [Round V3 W3 report](round_v3_w3/W3_REPORT.md): FDC1 against the equal-size MoE, 2×2 single factors, 18k-step runs, practical measurement of 21 checkpoints (executed work, latency, decode, VRAM, hotset, generation loops) and an exploratory decode-speed benchmark; [preregistration](round_v3_w3/PREREGISTRATION.md), tables `analysis_*.txt`, raw `measure/` and `c_decode/`.
 - [summary.csv](summary.csv): machine-readable **E00–E09 only** (byte-level experiments).
 - [Research status](../docs/RESEARCH_STATUS.md) · [Open questions](../docs/OPEN_QUESTIONS.md).
 

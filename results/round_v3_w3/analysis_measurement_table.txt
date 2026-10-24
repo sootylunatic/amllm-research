@@ -1,0 +1,36 @@
+provenance: NVIDIA GeForce RTX 3090 cd909ea282660f0f runs 21
+config|exec MFLOP padding-free|exec MFLOP bmm|full fwd 8x512 ms (graph/eager)|decode tok/s b1/b8/b32 (graph or eager)|TTFT b1 ms|weights MB bf16|KV MB b8 c512|peak above weights MB b8 c512|LRU hit 25%/50%|greedy loop share|greedy rep4|sampled loop share|NLL mean|NLL last bucket
+B_moe|22.83|24.93|5.21|875/6532/25750|9.4|32.7|36.0|140.1|0.121/0.473|0.823|0.894|0.323|2.1065|1.9263
+MoE12|22.87|28.80|6.46|780/6021/23025|9.4|59.8|36.0|172.8|0.292/0.595|0.823|0.888|0.167|2.0504|1.8760
+B_dense|22.81|22.81|2.98|2077/14972/53017|3.7|25.9|36.0|140.2|nan/nan|0.802|0.912|0.406|2.1184|1.9375
+B_fixed|22.86|31.82|5.89|653/4881/19253|10.1|32.7|36.0|134.0|0.519/0.735|0.823|0.887|0.344|2.1478|1.9699
+FDC1|22.93|35.71|8.64|634/4992/19523|10.1|59.8|36.0|276.9|0.558/0.755|0.771|0.889|0.240|2.0715|1.9040
+AD02a_3|19.71|27.61|6.03|625/4700/18288|10.9|32.7|36.0|133.9|0.583/0.803|0.542|0.815|0.062|2.4933|2.3252
+AD03b|18.30|24.96|11.76|87/661/2612|11.8|32.7|36.0|133.7|0.595/0.815|0.583|0.814|0.125|2.5132|2.3537
+
+A GATE (padding-free executed FLOP <= 0.90 x B_moe AND hard NLL <= 1.03 x B_moe, 3/3; NLL from report.json, W2)
+AD02a_3: exec ratio [0.866, 0.859, 0.864] NLL ratio [1.177, 1.201, 1.197] -> 0/3 -> NOT_SUPPORTED_IN_SCOPE
+AD03b: exec ratio [0.811, 0.797, 0.797] NLL ratio [1.172, 1.226, 1.201] -> 0/3 -> NOT_SUPPORTED_IN_SCOPE
+FDC1 padding-free exec / MoE12: 1.0024  (FDC1-MoE12 quality pair NOT_SUPPORTED -> no combined claim)
+
+NLL BY POSITION, last bucket 448-512 (paired, decision rule)
+FDC1 - MoE12: +0.0279 INCONCLUSIVE seeds [0.0138, 0.0404, 0.0296]
+FDC1 - B_moe: -0.0224 INCONCLUSIVE seeds [-0.0111, -0.031, -0.025]
+
+GENERATION (paired differences, descriptive)
+FDC1-MoE12 greedy loop_share: -0.052 seeds [-0.187, -0.062, 0.094]
+FDC1-MoE12 greedy repeated_4gram_rate: +0.001 seeds [-0.016, -0.014, 0.032]
+FDC1-MoE12 sampled_t0.8_p0.95 loop_share: +0.073 seeds [0.0, 0.094, 0.125]
+FDC1-MoE12 sampled_t0.8_p0.95 repeated_4gram_rate: -0.002 seeds [-0.003, -0.022, 0.018]
+FDC1-B_moe greedy loop_share: -0.052 seeds [-0.062, -0.094, 0.0]
+FDC1-B_moe greedy repeated_4gram_rate: -0.005 seeds [-0.007, -0.009, 0.0]
+FDC1-B_moe sampled_t0.8_p0.95 loop_share: -0.083 seeds [-0.125, -0.094, -0.031]
+FDC1-B_moe sampled_t0.8_p0.95 repeated_4gram_rate: -0.071 seeds [-0.165, -0.034, -0.013]
+MoE12-B_moe greedy loop_share: -0.000 seeds [0.125, -0.031, -0.094]
+MoE12-B_moe greedy repeated_4gram_rate: -0.006 seeds [0.009, 0.004, -0.032]
+MoE12-B_moe sampled_t0.8_p0.95 loop_share: -0.156 seeds [-0.125, -0.188, -0.156]
+MoE12-B_moe sampled_t0.8_p0.95 repeated_4gram_rate: -0.069 seeds [-0.162, -0.012, -0.031]
+FDC1-B_dense greedy loop_share: -0.031 seeds [0.0, -0.125, 0.031]
+FDC1-B_dense greedy repeated_4gram_rate: -0.023 seeds [-0.035, -0.024, -0.009]
+FDC1-B_dense sampled_t0.8_p0.95 loop_share: -0.167 seeds [-0.312, -0.156, -0.031]
+FDC1-B_dense sampled_t0.8_p0.95 repeated_4gram_rate: -0.143 seeds [-0.203, -0.163, -0.063]

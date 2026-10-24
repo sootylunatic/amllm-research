@@ -295,3 +295,17 @@ def test_triton_dispatch_refuses_training():
         model(x)
     with torch.no_grad():
         model(x)  # inference works
+
+
+def test_w3_decode_reports_graph_percentiles():
+    """W3 measurement: the CUDA Graph decode records p50/p95 per token, like the eager decode."""
+    from amllm import w3measure as w3
+    torch.manual_seed(0)
+    cfg = ModelConfig(arch="moe", max_seq_len=64, d_model=64, n_heads=4, n_layers=2, n_experts=4, moe_topk=2, expert_hidden=64)
+    model = build_model(cfg).cuda().eval()
+    set_dispatch(model, "triton")
+    val = torch.randint(0, 256, (4000,))
+    r = w3.decode(model, val, torch.device("cuda"), batches=(1,), prompt=16, new=8, repeats=1)["b1"]
+    if r.get("decode_tokens_per_s_graph") is not None:
+        assert r["decode_ms_per_token_p50_graph"] <= r["decode_ms_per_token_p95_graph"]
+    assert r["decode_ms_per_token_p50"] <= r["decode_ms_per_token_p95"]

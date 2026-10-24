@@ -1,0 +1,39 @@
+# Decode-step profile, w3a (RTX 3090), 2026-10-24, script /workspace/decode_profile.py (torch.profiler, batch 1,
+# prompt 128, 10 eager decode steps after 5 warm-up steps, bf16 autocast, fp32 weights, Triton expert dispatch).
+# Console output copied verbatim from the run (the script printed it and wrote no file).
+== B_moe: GPU time/step 2.444 ms, kernels/step 542, sync-ish calls/step 24
+     0.257 ms  x151.0  aten::copy_
+     0.117 ms  x 61.0  void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kern
+     0.117 ms  x  6.0  aten::_efficient_attention_forward
+     0.117 ms  x  6.0  fmha_cutlassF_bf16_aligned_64x64_rf_sm80(PyTorchMemEffAttention::AttentionKernel
+     0.079 ms  x 12.0  _grouped_linear_kernel
+     0.075 ms  x 24.0  aten::index
+     0.074 ms  x 18.0  aten::addmm
+     0.070 ms  x 12.0  aten::topk
+== FDC1: GPU time/step 3.305 ms, kernels/step 618, sync-ish calls/step 24
+     0.527 ms  x157.0  aten::copy_
+     0.372 ms  x 61.0  void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kern
+     0.129 ms  x 12.0  _grouped_linear_kernel
+     0.117 ms  x  6.0  aten::_efficient_attention_forward
+     0.117 ms  x  6.0  fmha_cutlassF_bf16_aligned_64x64_rf_sm80(PyTorchMemEffAttention::AttentionKernel
+     0.093 ms  x 36.0  aten::mul
+     0.076 ms  x 24.0  aten::index
+     0.076 ms  x 18.0  aten::addmm
+== B_fixed: GPU time/step 3.273 ms, kernels/step 612, sync-ish calls/step 18
+     0.526 ms  x157.0  aten::copy_
+     0.373 ms  x 61.0  void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kern
+     0.129 ms  x 12.0  _grouped_linear_kernel
+     0.117 ms  x  6.0  aten::_efficient_attention_forward
+     0.117 ms  x  6.0  fmha_cutlassF_bf16_aligned_64x64_rf_sm80(PyTorchMemEffAttention::AttentionKernel
+     0.092 ms  x 36.0  aten::mul
+     0.076 ms  x 24.0  aten::index
+     0.075 ms  x 12.0  aten::topk
+== B_dense: GPU time/step 0.846 ms, kernels/step 134, sync-ish calls/step 0
+     0.117 ms  x  6.0  aten::_efficient_attention_forward
+     0.117 ms  x  6.0  fmha_cutlassF_bf16_aligned_64x64_rf_sm80(PyTorchMemEffAttention::AttentionKernel
+     0.086 ms  x 24.0  aten::addmm
+     0.086 ms  x 24.0  std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo
+     0.041 ms  x 25.0  aten::copy_
+     0.038 ms  x 13.0  aten::native_layer_norm
+     0.038 ms  x 13.0  void at::native::(anonymous namespace)::vectorized_layer_norm_kernel<float, floa
+     0.035 ms  x 13.0  aten::add

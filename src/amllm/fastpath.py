@@ -22,14 +22,11 @@ from .model import AdaptiveModularLM, CausalAttention
 BUCKETS = (0.25, 0.5, 0.75, 1.0)
 
 
-def require_default_bank(model) -> None:
-    """The execution paths below implement one shared bank, one shared bank norm and attention on every hop
-    (FD01/FD03/FD04 switches off)."""
+def require_supported(model) -> None:
+    """The execution paths below follow the per-hop bank (FD01 `bank_groups`), its normalisation (FD03 `bank_norm`) and
+    adaptive K (AD03 `expert_topp`, inside the bank) exactly as `AdaptiveModularLM.forward`; they implement attention on
+    every hop with shared or per-hop weights only (the FD04 switches are refused)."""
     cfg = model.cfg
-    if cfg.bank_groups != 1 or cfg.bank_norm != "shared":
-        raise ValueError("fast/static/KV-cache execution supports bank_groups=1 and bank_norm='shared' only")
-    if cfg.expert_topp > 0:
-        raise ValueError("fast/static/KV-cache execution supports a fixed expert_topk only (expert_topp=0)")
     if (cfg.attn_every, cfg.attn_groups, cfg.attn_adapter_rank) != (1, 1, 0):
         raise ValueError("fast/static/KV-cache execution supports attn_every=1, attn_groups=1, attn_adapter_rank=0 only")
 
@@ -66,7 +63,7 @@ def _packed_attention(attn: CausalAttention, h: Tensor, idx: Tensor, valid: Tens
 def bucketed_hard_forward(model: AdaptiveModularLM, token_ids: Tensor, threshold: float | None = None,
                           buckets=BUCKETS) -> tuple[Tensor, dict]:
     cfg = model.cfg
-    require_default_bank(model)
+    require_supported(model)
     if not (cfg.arch == "amllm" and cfg.attn_per_hop and cfg.halt_rule == "survival"):
         raise ValueError("bucketed execution supports AM-LLM with attention in every hop and survival halting")
     threshold = cfg.halt_threshold if threshold is None else threshold
@@ -90,7 +87,7 @@ def bucketed_hard_forward(model: AdaptiveModularLM, token_ids: Tensor, threshold
         order = torch.sort((~active).long() * t + positions[None, :], dim=1).indices
         idx = order[:, :cap]                                                  # [B,C]
         valid = torch.arange(cap, device=x.device)[None, :] < per_seq[:, None]
-        weight = (survival * active).gather(1, idx) * valid                   # reference update weights
+        weight = ((survival * active).gather(1, idx) * valid).to(x.dtype)     # reference update weights (state dtype)
 
         if cfg.unshared_attention and hop > 0:
             attn, norm = model.hop_attentions[hop - 1], model.hop_attn_norms[hop - 1]
@@ -100,7 +97,7 @@ def bucketed_hard_forward(model: AdaptiveModularLM, token_ids: Tensor, threshold
         x = x.scatter_add(1, idx[..., None].expand(-1, -1, d), weight[..., None] * a)
 
         rows = x.gather(1, idx[..., None].expand(-1, -1, d)).reshape(-1, d)
-        delta, _, _, _ = model.bank(model.step_norm(rows))
+        delta, _, _, _ = model.bank_for(hop)(model.normed(hop, rows))
         x = x.scatter_add(1, idx[..., None].expand(-1, -1, d), weight[..., None] * delta.view(b, cap, d))
 
         counts += active
@@ -134,9 +131,9 @@ def static_hard_forward(model: AdaptiveModularLM, token_ids: Tensor, threshold: 
     weight 0). Same mathematical model as the reference hard forward, but without the per-hop `nonzero` and without
     early exit, so every shape is static and the forward has no host synchronisation (with `grouped` dispatch)."""
     cfg = model.cfg
-    require_default_bank(model)
-    if not (cfg.arch == "amllm" and cfg.attn_per_hop and cfg.halt_rule == "survival"):
-        raise ValueError("static execution supports AM-LLM with attention in every hop and survival halting")
+    require_supported(model)
+    if not (cfg.arch == "amllm" and cfg.attn_per_hop and cfg.halt_rule in ("survival", "none")):
+        raise ValueError("static execution supports AM-LLM with attention in every hop and survival or no halting")
     threshold = cfg.halt_threshold if threshold is None else threshold
     b, t = token_ids.shape
     d = cfg.d_model
@@ -145,16 +142,16 @@ def static_hard_forward(model: AdaptiveModularLM, token_ids: Tensor, threshold: 
     active = torch.ones(b, t, dtype=torch.bool, device=x.device)
     counts = torch.zeros(b, t, dtype=torch.long, device=x.device)
     for hop in range(cfg.n_hops):
-        weight = (survival * active)[..., None]
+        weight = (survival * active)[..., None].to(x.dtype)  # survival stays fp32; bf16 weights keep a bf16 state
         if cfg.unshared_attention and hop > 0:
             a = model.hop_attentions[hop - 1](model.hop_attn_norms[hop - 1](x))
         else:
             a = model.attention(model.attn_norm(x))
         x = x + weight * a
-        delta, _, _, _ = model.bank(model.step_norm(x).reshape(-1, d))
+        delta, _, _, _ = model.bank_for(hop)(model.normed(hop, x.reshape(-1, d)))
         x = x + weight * delta.view(b, t, d)
         counts += active
-        if hop < cfg.n_hops - 1:
+        if hop < cfg.n_hops - 1 and cfg.halt_rule == "survival":  # fixed depth (halt_rule none): every hop, weight 1
             p_stop = torch.sigmoid(model.halt_head(x)).squeeze(-1).float()  # same rounding as the reference
             survival = survival * (1.0 - p_stop)
             active = active & (survival >= threshold)

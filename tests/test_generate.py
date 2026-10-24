@@ -10,6 +10,13 @@ VARIANTS = {
     "amllm_per_hop_attention": dict(arch="amllm", unshared_attention=True),
     "amllm_ua_module_top1_st": dict(arch="amllm", unshared_attention=True, module_topk=1, route_weighting="straight_through"),
     "amllm_ua_expert_top1_fs": dict(arch="amllm", unshared_attention=True, expert_topk=1, route_weighting="full_softmax"),
+    # W2/W3 switches: per-hop banks with flat routing (FDC1-like), per-hop bank norms, adaptive K (AD03)
+    "amllm_fdc1_like": dict(arch="amllm", unshared_attention=True, bank_groups=2, n_modules=1, experts_per_module=6,
+                            module_topk=1, route_weighting="straight_through"),
+    "amllm_bank_norm_per_hop": dict(arch="amllm", unshared_attention=True, bank_groups=4, bank_norm="per_hop"),
+    "amllm_hop_affine": dict(arch="amllm", bank_norm="hop_affine"),
+    "amllm_adaptive_k": dict(arch="amllm", unshared_attention=True, expert_topp=0.6, route_weighting="straight_through"),
+    "moe_adaptive_k": dict(arch="moe", expert_topp=0.6),
     "moe": dict(arch="moe"),
     "dense": dict(arch="dense"),
 }
@@ -24,6 +31,13 @@ def make(name, dtype=torch.float64, seed=0):
         with torch.no_grad():
             model.halt_head.weight.normal_(0, 2.0)  # tokens halt after different numbers of hops
             model.halt_head.bias.fill_(0.3)
+            if hasattr(model, "hop_scale"):  # move the per-hop affine away from identity so it really matters
+                model.hop_scale.normal_(1.0, 0.3)
+                model.hop_shift.normal_(0.0, 0.3)
+    if model.cfg.expert_topp > 0:  # a sharp router (AM-LLM and MoE), so that adaptive K really drops routes
+        with torch.no_grad():
+            for bank in (m for m in model.modules() if hasattr(m, "expert_router_w")):
+                bank.expert_router_w.mul_(200.0)
     return model
 
 
@@ -59,3 +73,16 @@ def test_cache_size_formula():
     gen = Generator(model, batch=3, max_len=40)
     units = model.cfg.n_hops
     assert gen.cache_bytes() == units * 2 * 3 * 40 * model.cfg.d_model * 4
+
+
+@pytest.mark.parametrize("name", ["amllm_adaptive_k", "moe_adaptive_k"])
+def test_adaptive_k_variants_really_drop_routes(name):
+    model = make(name)
+    with torch.no_grad():
+        info = model(torch.randint(0, 256, (2, 40)), **({"hard_halt": True} if isinstance(model, AdaptiveModularLM) else {}))[1]
+    routed = int(info["expert_counts"].sum())
+    if isinstance(model, AdaptiveModularLM):
+        full = int(info["hops_per_token"].sum()) * model.cfg.module_topk * model.cfg.expert_topk
+    else:
+        full = 2 * 40 * model.cfg.n_layers * model.cfg.moe_topk
+    assert 0 < routed < full

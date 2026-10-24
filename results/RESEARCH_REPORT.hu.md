@@ -2,7 +2,7 @@
 
 # Publikus kutatási jelentés — 2026-10-23-i állapot
 
-A lezárt belső kísérletek **másodlagos, auditált összesítője**, nem független újrafuttatás vagy checkpointkiadás. Az előregisztrált V3 kör lezárt W1 és W2 hulláma alább szerepel.
+A lezárt belső kísérletek **másodlagos, auditált összesítője**, nem független újrafuttatás vagy checkpointkiadás. Az előregisztrált V3 kör lezárt W1–W3 hulláma alább szerepel.
 
 | Fázis | Modell/adat | Értelmezés |
 |---|---|---|
@@ -12,6 +12,7 @@ A lezárt belső kísérletek **másodlagos, auditált összesítője**, nem fü
 | Éjszaka 2026-10-22/23 | 12 konfiguráció × 3 seed | Legjobb FixedDepth MoE-közeli NLL több FLOP mellett |
 | V3 W1 2026-10-23 | 16 konfiguráció × 3 seed, előregisztrálva | Az expert-kötés és a hierarchikus routing ront; az anytime-veszteség rendbe hozza a kemény utat, de nem MoE-szintre |
 | V3 W2 2026-10-24 | 22 konfiguráció × 3 seed, előregisztrálva | A hoponkénti attention számít; 0,85× routolt FLOP-on az AM kikap az illesztett MoE-tól; az FDC1 csak 1,83× paraméterrel van a MoE alatt |
+| V3 W3 2026-10-24 | 17–31M, 5 konfiguráció × 3 seed + mérés, előregisztrálva | Az azonos méretű MoE 9k-nál veri az FDC1-et, 18k-nál nem különböztethetők meg; az A-kapu nem teljesül; a dekódolási rés főleg végrehajtási (feltáró) |
 
 A bájtszintű és BPE nat/token loss **nem összevethető közvetlenül**.
 
@@ -72,6 +73,20 @@ Az „azonos FLOP” routolt FLOP-ot jelent; a bmm-paddinggel végrehajtott FLOP
 | Adaptív K (p 0,7) − fix K = 1 | −0,068 | [−0,096, −0,039] | jobb |
 
 Az azonos FLOP routolt FLOP-ot jelent. A tanító split 53M token, így minden futás kb. 2,8-szor látja; az FDC1 előnye a MoE-val szemben a tanítás során csökken (2k lépésnél −0,127, 9k-nál −0,031). Az INCONCLUSIVE sorok nem mutatják a hatás hiányát.
+
+## V3 kör, W3 — FDC1 az azonos méretű MoE ellen, hosszabb tanítás, gyakorlati mérés (lezárva 2026-10-24)
+
+A tanítási kód a W2-höz képest változatlan, így a W2-futásokkal közvetlen az összevetés. [Lezárt előregisztráció](round_v3_w3/PREREGISTRATION.hu.md) · [W3 riport](round_v3_w3/W3_REPORT.hu.md) seedenkénti értékekkel, görbékkel és mérési táblákkal.
+
+| Kérdés | Δ nat | 95% CI | Ítélet |
+|---|---:|---|---|
+| **FDC1 − MoE12** (azonos paraméter 31,4M, azonos routolt FLOP), 9k lépés | **+0,019** | [+0,000, +0,038] | **rosszabb** — a W2-es előny a paraméterekből jött |
+| FDC1 − MoE12 18k lépésnél (az adat ~5,6-szor ismétlődik) | +0,001 | [−0,018, +0,020] | INCONCLUSIVE |
+| Lapos − hierarchikus routing, 3 bank / 1 bank (azonos paraméter) | −0,046 / −0,034 | 0 alatt | jobb |
+| 3 bank − 1 bank, hierarchikus / lapos (1,83× paraméter) | −0,027 / −0,039 | 0 alatt | jobb |
+| A-sikerkapu, halting modellek (padding nélküli végrehajtott FLOP ≤ 0,90× MoE **és** veszteség ≤ 1,03× MoE) | 0,80–0,86× FLOP, 1,18–1,23× veszteség | | **nem teljesül** (0/3) |
+
+Feltáró dekódolási mérés (egy RTX 3090, batch 1, nem előregisztrált): egy hívásonkénti expertsúly-konverzió és a rendező/szóró dispatch javítása 3–3,3-szorosára gyorsítja az AM-LLM dekódolását (FDC1 2 179 vs MoE 2 293 token/s), az adaptív mélységű modellt ~23-szorosára (88 → ~2 000 token/s); a validációs veszteség legfeljebb 0,003-mal változik. Batch 32-n a MoE marad gyorsabb.
 
 ## Halting, decode és memória
 

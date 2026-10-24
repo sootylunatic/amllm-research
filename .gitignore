@@ -22,6 +22,7 @@ results/*
 !results/round_v3_w0/
 !results/round_v3_w1/
 !results/round_v3_w2/
+!results/round_v3_w3/
 
 # marker written by tools/export_public.py
 .amllm-public-export

@@ -2,7 +2,7 @@
 
 # Public research evidence report — snapshot 2026-10-23
 
-This is a **curated, secondary summary** of closed internal experiments, not an independent rerun or a checkpoint release. The preregistered V3 round, waves W1 and W2 (both closed), is summarised below.
+This is a **curated, secondary summary** of closed internal experiments, not an independent rerun or a checkpoint release. The preregistered V3 round, waves W1–W3 (all closed), is summarised below.
 
 ## Series and interpretations
 
@@ -14,6 +14,7 @@ This is a **curated, secondary summary** of closed internal experiments, not an 
 | Overnight 2026-10-22/23 | Same corpus/scale, 12 configurations × 3 paired seeds | Strongest FixedDepth variants approach MoE loss at higher estimated FLOP |
 | V3 W1 2026-10-23 | Same corpus/scale, 16 configurations × 3 seeds, preregistered | Expert tying and hierarchical routing cost quality; anytime loss repairs the hard path but not to MoE level |
 | V3 W2 2026-10-24 | Same corpus/scale, 22 configurations × 3 seeds, preregistered | Per-hop attention matters; AM loses to matched MoE at 0.85× routed FLOP; FDC1 below MoE only with 1.83× params |
+| V3 W3 2026-10-24 | Same corpus, 17–31M, 5 configurations × 3 seeds + measurement, preregistered | Equal-size MoE beats FDC1 at 9k, not distinguishable at 18k; A gate not met; decode gap mostly execution (exploratory) |
 
 Do **not** directly compare byte-level NLL with BPE nat/token.
 
@@ -74,6 +75,20 @@ New code version (`cd909ea282660f0f`); anchors reproduce W1 within ±0.0015 (MoE
 | Adaptive K (p 0.7) − fixed K = 1 | −0.068 | [−0.096, −0.039] | better |
 
 Equal FLOP means routed FLOP. The training split has 53M tokens, so every run sees it about 2.8 times; FDC1's lead over MoE shrinks during training (−0.127 at 2k steps, −0.031 at 9k). Inconclusive rows do not show the absence of an effect.
+
+## Round V3, W3 — FDC1 against the equal-size MoE, longer training, practical measurement (closed 2026-10-24)
+
+Training code unchanged from W2, so W2 runs are compared directly. [Sealed preregistration](round_v3_w3/PREREGISTRATION.md) · [W3 report](round_v3_w3/W3_REPORT.md) with per-seed values, curves and the measurement tables.
+
+| Question | Δ nat | 95% CI | Verdict |
+|---|---:|---|---|
+| **FDC1 − MoE12** (equal params 31.4M, equal routed FLOP), 9k steps | **+0.019** | [+0.000, +0.038] | **worse** — the W2 lead came from parameters |
+| FDC1 − MoE12 at 18k steps (data repeated ~5.6×) | +0.001 | [−0.018, +0.020] | inconclusive |
+| Flat − hierarchical routing, 3 banks / 1 bank (equal params) | −0.046 / −0.034 | below 0 | better |
+| 3 banks − 1 bank, hierarchical / flat (1.83× params) | −0.027 / −0.039 | below 0 | better |
+| A success gate, halting models (padding-free executed FLOP ≤ 0.90× MoE **and** loss ≤ 1.03× MoE) | 0.80–0.86× FLOP, 1.18–1.23× loss | | **not met** (0/3) |
+
+Exploratory decode benchmark (one RTX 3090, batch 1, not preregistered): fixing a per-call expert-weight conversion and the sort/scatter dispatch makes AM-LLM decoding 3–3.3× faster (FDC1 2,179 vs MoE 2,293 tokens/s) and the adaptive-depth model ~23× faster (88 → ~2,000 tokens/s); validation loss changes by ≤ 0.003. At batch 32 the MoE stays faster.
 
 ## Failure analysis and limitations
 

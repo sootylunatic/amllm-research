@@ -13,6 +13,11 @@ VARIANTS = {
     "per_hop_attention_top2": dict(unshared_attention=True),
     "per_hop_attention_module_top1_st": dict(unshared_attention=True, module_topk=1, route_weighting="straight_through"),
     "per_hop_attention_expert_top1_fs": dict(unshared_attention=True, expert_topk=1, route_weighting="full_softmax"),
+    "fdc1_like": dict(unshared_attention=True, bank_groups=2, n_modules=1, experts_per_module=6, module_topk=1,
+                      route_weighting="straight_through"),
+    "bank_norm_per_hop": dict(unshared_attention=True, bank_groups=4, bank_norm="per_hop"),
+    "hop_affine": dict(bank_norm="hop_affine"),
+    "adaptive_k": dict(unshared_attention=True, expert_topp=0.6, route_weighting="straight_through"),
 }
 
 
@@ -26,6 +31,12 @@ def model_with_varied_halting(seed=0, **kw):
     with torch.no_grad():
         model.halt_head.weight.normal_(0, 2.0)
         model.halt_head.bias.fill_(0.3)
+        if model.cfg.expert_topp > 0:  # a sharp router, so that adaptive K really drops routes
+            for bank in (m for m in model.modules() if hasattr(m, "expert_router_w")):
+                bank.expert_router_w.mul_(200.0)
+        if hasattr(model, "hop_scale"):  # move the per-hop affine away from identity so it really matters
+            model.hop_scale.normal_(1.0, 0.3)
+            model.hop_shift.normal_(0.0, 0.3)
     return model
 
 
@@ -100,6 +111,28 @@ def test_static_masked_hard_equals_reference_fp64(name):
     """F3/B2: hard halting computed for all tokens with the reference weights (no nonzero, no early exit)."""
     from amllm.fastpath import static_hard_forward
     model = model_with_varied_halting(seed=5, **VARIANTS[name])
+    x = torch.randint(0, 256, (3, 32))
+    with torch.no_grad():
+        ref, info = model(x, hard_halt=True)
+        out, counts = static_hard_forward(model, x)
+    assert torch.allclose(out, ref, atol=1e-10, rtol=0)
+    assert torch.equal(counts, info["hops_per_token"])
+
+
+def test_adaptive_k_variant_really_drops_routes():
+    """Guards the equivalence tests above: with the sharp router some tokens use fewer than expert_topk experts."""
+    model = model_with_varied_halting(**VARIANTS["adaptive_k"])
+    with torch.no_grad():
+        _, info = model(torch.randint(0, 256, (3, 32)), hard_halt=True)
+    routed = int(info["expert_counts"].sum())
+    full = int(info["hops_per_token"].sum()) * model.cfg.module_topk * model.cfg.expert_topk
+    assert 0 < routed < full
+
+
+def test_static_path_equals_reference_at_fixed_depth_fp64():
+    """W3: the static path also runs fixed-depth (halt_rule none) models, e.g. FDC1, so they can be CUDA-Graph captured."""
+    from amllm.fastpath import static_hard_forward
+    model = model_with_varied_halting(seed=2, halt_rule="none", **VARIANTS["fdc1_like"])
     x = torch.randint(0, 256, (3, 32))
     with torch.no_grad():
         ref, info = model(x, hard_halt=True)

@@ -103,13 +103,18 @@ def test_causality_with_separate_banks_and_norms():
     assert torch.allclose(la[:, :7], lb[:, :7], atol=1e-5)
 
 
-def test_fast_paths_refuse_non_default_bank():
+def test_fast_paths_refuse_only_the_fd04_attention_switches():
+    """Per-hop banks, bank norms and adaptive K are supported (equivalence: test_fastpath.py, test_generate.py)."""
     from amllm.fastpath import static_hard_forward
-    model = build_model(tiny_cfg(bank_groups=2)).eval()
+    from amllm.generate import Generator
+    for kw in (dict(bank_groups=2), dict(bank_norm="per_hop"), dict(expert_topp=0.6)):
+        model = build_model(tiny_cfg(**kw)).eval()
+        static_hard_forward(model, torch.randint(0, 256, (1, 8)))
+        Generator(model, batch=1, max_len=16)
+    model = build_model(tiny_cfg(attn_every=2)).eval()
     with pytest.raises(ValueError):
         static_hard_forward(model, torch.randint(0, 256, (1, 8)))
     with pytest.raises(ValueError):
-        from amllm.generate import Generator
         Generator(model, batch=1, max_len=16)
 
 
@@ -327,7 +332,7 @@ def test_topp_weights_and_gradients(weighting):
     assert torch.isfinite(scores.grad).all() and scores.grad.abs().sum() > 0
 
 
-def test_topp_trains_and_is_refused_by_fast_paths_and_random_routing():
+def test_topp_trains_and_is_refused_by_random_routing():
     torch.manual_seed(2)
     model = AdaptiveModularLM(tiny_cfg(n_hops=3, expert_topp=0.6, route_weighting="straight_through"))
     x, y = torch.randint(0, 256, (2, 9)), torch.randint(0, 256, (2, 9))
@@ -338,6 +343,4 @@ def test_topp_trains_and_is_refused_by_fast_paths_and_random_routing():
         tiny_cfg(expert_topp=0.5, router_mode="random")
     with pytest.raises(AssertionError):
         tiny_cfg(expert_topp=1.5)
-    from amllm.fastpath import static_hard_forward
-    with pytest.raises(ValueError):
-        static_hard_forward(build_model(tiny_cfg(expert_topp=0.5)).eval(), torch.randint(0, 256, (1, 8)))
+
